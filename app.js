@@ -160,11 +160,35 @@
   }
 
   function hexFromTrueColor(n){
-    if (typeof n !== "number" || !isFinite(n)) return null;
+    if (typeof n !== 'number' || !isFinite(n)) return null;
+
+    // DXF: si viene 1..255 normalmente es ACI (color index), NO truecolor
+    if (n >= 0 && n <= 255) return null;
+
     const r = (n >> 16) & 255;
     const g = (n >> 8) & 255;
     const b = n & 255;
-    return `#${r.toString(16).padStart(2,"0")}${g.toString(16).padStart(2,"0")}${b.toString(16).padStart(2,"0")}`;
+    return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+  }
+
+    function aciToCss(aci){
+    const a = Math.abs(Number(aci) || 0);
+    const text = getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#e6edf3';
+
+    // ACI básicos (suficiente para la mayoría)
+    const pal = {
+      0: text,   // ByBlock / default → usa texto (alto contraste)
+      1: '#ff3b30',
+      2: '#ffd60a',
+      3: '#34c759',
+      4: '#5ac8fa',
+      5: '#0a84ff',
+      6: '#ff2d55',
+      7: text,   // ACI 7: blanco/negro dependiente de fondo → aquí lo forzamos a claro
+      8: '#8e8e93',
+      9: '#c7c7cc',
+    };
+    return pal[a] || null;
   }
   function hashColor(str){
     let h=2166136261;
@@ -332,7 +356,11 @@ btnRuler?.addEventListener("click", () => {
     const layersTable = dxf?.tables?.layer?.layers || {};
     for (const [name, L] of Object.entries(layersTable)){
       // dxf-parser puede exponer L.color como trueColor
-      const color = hexFromTrueColor(L.color) || hashColor(name);
+      const aci = (L.colorNumber ?? L.color);      // depende cómo te lo dé dxf-parser
+      const color =
+        hexFromTrueColor(L.trueColor) ||
+        aciToCss(aci) ||
+        hashColor(name);
       map.set(name, { color, visible: L.visible !== false, paths: [] });
     }
     if (!map.has("0")) map.set("0", { color: hashColor("0"), visible: true, paths: [] });
