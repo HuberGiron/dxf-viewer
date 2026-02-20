@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SVG → DXF + Visor DXF — IBERO</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- DXF parser (UMD) expone window.DxfParser -->
+  <script src="https://unpkg.com/dxf-parser@1.1.2/dist/dxf-parser.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="assets/logo-ibero.png" alt="IBERO" class="logo" />
+      <h1>SVG → DXF / Visor DXF</h1>
+    </div>
+
+    <div class="actions">
+      <div class="segmented" role="tablist" aria-label="Modo">
+        <button class="seg on" id="modeView" type="button">Visor DXF</button>
+        <button class="seg" id="modeConvert" type="button">Convertir SVG → DXF</button>
+      </div>
+
+      <label class="btn" for="dxfFile" id="btnPickDxf">Cargar DXF</label>
+      <input id="dxfFile" class="file" type="file" accept=".dxf,.DXF" />
+
+      <label class="btn" for="svgFile" id="btnPickSvg" style="display:none;">Cargar SVG</label>
+      <input id="svgFile" class="file" type="file" accept=".svg,image/svg+xml" />
+
+      <!-- <button class="btn" id="btnConvertNow" type="button" style="display:none;">Convertir</button> -->
+      <button class="btn primary" id="btnDownloadDxf" type="button" disabled>Descargar DXF</button>
+
+      <button class="btn" id="btnReset" type="button">Reset view</button>
+      <button class="btn" id="btnRuler" type="button">Regla</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section id="viewer" aria-label="Visor DXF">
+      <canvas id="dxfCanvas" class="canvas2d"></canvas>
+      <div class="hintbar">Pan: arrastra • Zoom: rueda • Doble click: fit • Drop: DXF</div>
+    </section>
+
+    <aside id="stats">
+      <!-- Converter panel -->
+      <div class="card" id="convertPanel" style="display:none;">
+        <h2>Conversión SVG → DXF</h2>
+
+        <div class="dropzone" id="svgDrop">
+          Suelta aquí tu archivo <b>.svg</b> o usa “Cargar SVG”.
+        </div>
+
+        <div class="note" id="svgOpenInfo">SVG: —</div>
+
+        <div class="controls-block">
+          <div class="row between">
+            <label class="small">Escala (mm por unidad SVG)
+              <input id="svgScale" type="number" value="1" min="0" step="0.001" />
+            </label>
+          </div>
+
+          <div class="row between">
+            <label class="small">Calidad curvas (segmentos)
+              <input id="svgQuality" type="number" value="32" min="4" step="1" />
+            </label>
+          </div>
+
+          <div class="row between">
+            <label class="small">Unir segmentos (mm)
+              <input id="svgStitch" type="number" value="0.05" min="0" step="0.001" />
+            </label>
+          </div>
+
+          <div class="row between">
+            <label class="small">Unidades DXF (INSUNITS)
+              <select id="svgOutUnits" class="select">
+                <option value="4" selected>mm</option>
+                <option value="5">cm</option>
+                <option value="6">m</option>
+                <option value="1">in</option>
+                <option value="2">ft</option>
+                <option value="0">unitless</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="row wrap">
+            <button class="btn primary" id="btnConvert" type="button">Convertir → DXF</button>
+            <button class="btn" id="btnClear" type="button">Limpiar</button>
+          </div>
+
+          <p class="note" id="convertStatus">Tip: si tu SVG está en px y quieres mm, ajusta la escala.</p>
+        </div>
+
+        <div class="controls-block" id="svgPreviewBlock" style="display:none;">
+          <h2>Vista previa (SVG convertido)</h2>
+          <canvas id="svgPreview" class="preview" width="900" height="600"></canvas>
+          <p class="note">...</p>
+        </div>
+      </div>
+
+      <!-- DXF Info -->
+      <div class="card">
+        <h2>Info DXF</h2>
+
+        <dl class="kv">
+          <dt>Archivo</dt><dd id="infoFile">—</dd>
+          <dt>Entidades</dt><dd id="infoEnt">—</dd>
+          <dt>Capas</dt><dd id="infoLay">—</dd>
+          <dt>Unidades detectadas</dt><dd id="infoUnits">—</dd>
+          <dt>Override unidades</dt>
+          <dd>
+            <select id="unitsOverride" class="select">
+              <option value="auto" selected>Auto (usar INSUNITS)</option>
+              <option value="4">mm</option>
+              <option value="5">cm</option>
+              <option value="6">m</option>
+              <option value="1">in</option>
+              <option value="2">ft</option>
+              <option value="0">unitless</option>
+            </select>
+            <div class="note" id="unitsNote"></div>
+          </dd>
+
+          <dt>Dimensiones totales</dt><dd id="infoDims">—</dd>
+          <dt>Regla</dt><dd id="infoRuler">—</dd>
+        </dl>
+      </div>
+
+      <div class="card">
+        <h2>Capas</h2>
+        <div class="layers" id="layers"></div>
+        <p class="note">Desactiva capas para acelerar si tu DXF es grande.</p>
+      </div>
+
+      <p class="note">Nota: DXF puede venir “sin unidades” (INSUNITS=0 o ausente). En ese caso, usa el override para que las dimensiones en mm sean correctas.</p>
+    </aside>
+  </main>
+</body>
+</html>
