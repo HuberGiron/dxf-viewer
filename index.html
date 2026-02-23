@@ -3,17 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Visor DXF — IBERO</title>
+  <title>SVG → DXF + Visor DXF — IBERO</title>
   <link rel="stylesheet" href="styles.css" />
+
   <!-- DXF parser (UMD) expone window.DxfParser -->
   <script src="https://unpkg.com/dxf-parser@1.1.2/dist/dxf-parser.js"></script>
-  <script defer src="app.js"></script>
 </head>
+
 <body>
   <header class="topbar">
     <div class="brand">
       <img src="assets/logo-ibero.png" alt="IBERO" class="logo" />
-      <h1>Visor DXF</h1>
+      <h1>SVG → DXF / Visor DXF</h1>
     </div>
 
     <div class="actions">
@@ -28,18 +29,17 @@
       <label class="btn" for="svgFile" id="btnPickSvg" style="display:none;">Cargar SVG</label>
       <input id="svgFile" class="file" type="file" accept=".svg,image/svg+xml" />
 
-      <!-- <button class="btn" id="btnConvertNow" type="button" style="display:none;">Convertir</button> -->
       <button class="btn primary" id="btnDownloadDxf" type="button" disabled>Descargar DXF</button>
 
-      <button class="btn" id="btnReset" type="button">Reset view</button>
       <button class="btn" id="btnRuler" type="button">Regla</button>
+      <button class="btn" id="btnReset" type="button">Reset view</button>
     </div>
   </header>
 
   <main class="container">
     <section id="viewer" aria-label="Visor DXF">
       <canvas id="dxfCanvas" class="canvas2d"></canvas>
-      <div class="hintbar">Pan: arrastra • Zoom: rueda • Doble click: fit • Drop: DXF</div>
+      <div class="hintbar">Pan: arrastra • Zoom: rueda • Doble click: reset view • Regla: click inicio/fin • Drop: DXF</div>
     </section>
 
     <aside id="stats">
@@ -90,13 +90,14 @@
             <button class="btn" id="btnClear" type="button">Limpiar</button>
           </div>
 
-          <p class="note" id="convertStatus">Tip: si tu SVG está en px y quieres mm, ajusta la escala.</p>
+          <p class="note" id="convertStatus">Tip: si tu SVG está en px y quieres mm, ajusta la escala (ej. 0.264583).</p>
         </div>
 
+        <!-- Preview: OCULTO por defecto; se muestra al cargar SVG -->
         <div class="controls-block" id="svgPreviewBlock" style="display:none;">
           <h2>Vista previa (SVG convertido)</h2>
           <canvas id="svgPreview" class="preview" width="900" height="600"></canvas>
-          <p class="note">...</p>
+          <p class="note">Vista previa para validar geometría; el DXF se genera según INSUNITS.</p>
         </div>
       </div>
 
@@ -109,6 +110,7 @@
           <dt>Entidades</dt><dd id="infoEnt">—</dd>
           <dt>Capas</dt><dd id="infoLay">—</dd>
           <dt>Unidades detectadas</dt><dd id="infoUnits">—</dd>
+
           <dt>Override unidades</dt>
           <dd>
             <select id="unitsOverride" class="select">
@@ -134,8 +136,12 @@
         <p class="note">Desactiva capas para acelerar si tu DXF es grande.</p>
       </div>
 
-      <p class="note">Nota: DXF puede venir “sin unidades” (INSUNITS=0 o ausente). En ese caso, usa el override para que las dimensiones en mm sean correctas.</p>
+      <p class="note">
+        Nota: DXF puede venir “sin unidades” (INSUNITS=0 o ausente). En ese caso, usa el override para que las dimensiones en mm sean correctas.
+      </p>
     </aside>
   </main>
+
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
