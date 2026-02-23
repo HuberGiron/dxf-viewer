@@ -96,13 +96,6 @@ body{
   filter: saturate(1.2) brightness(1.05);
 }
 
-/* Regla activa */
-#btnRuler.on{
-  background: rgba(224,0,52,.28);
-  border-color: rgba(224,0,52,.75);
-  box-shadow: 0 0 0 2px rgba(224,0,52,.18) inset;
-}
-
 /* Dropzone */
 .dropzone{
   border:2px dashed var(--line);
@@ -208,9 +201,16 @@ input[type="number"]{
 
 /* Estado activo (ej. Regla) */
 .btn.on{
-  border-color: var(--ibero-red);
-  color: var(--ibero-red);
-  background: rgba(224,0,52,.14);
+  background: rgba(224,0,52,.28);
+  box-shadow: 0 0 0 2px rgba(224,0,52,.18) inset;
+  border: 1px solid #ffffff;
+  color: var(--text);
+  background: rgba(230,51,93,.14);
+  padding: 8px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 700;
+  user-select: none;
 }
 
 /* Descargar DXF destacado después de convertir */
