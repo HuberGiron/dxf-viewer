@@ -1,3 +1,4 @@
+import { parseSvgToGeometry, parsePdfToGeometry, geometryToDxfR12, geometryToSvg, geometryToPdfBytes, geometryBBox, sanitizeBaseName } from "./vector-utils.js";
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
 function fmt(n, d = 3) {
@@ -39,15 +40,15 @@ function aciToCss(aci) {
   const text = getCssVar("--text", "#e6edf3");
   const pal = {
     0: text,
-    1: "#ff3b30",
-    2: "#ffd60a",
-    3: "#34c759",
-    4: "#5ac8fa",
-    5: "#0a84ff",
-    6: "#ff2d55",
-    7: text,         // clave: visible en tema oscuro
-    8: "#8e8e93",
-    9: "#c7c7cc",
+    1: "#d92d20",
+    2: "#b54708",
+    3: "#027a48",
+    4: "#026aa2",
+    5: "#175cd3",
+    6: "#c11574",
+    7: text,         // ACI 7 usa texto para contraste con el fondo actual
+    8: "#667085",
+    9: "#475467",
   };
   return pal[a] || null;
 }
@@ -166,6 +167,8 @@ export function createViewer(dom) {
     dxfText: "",
     dxfName: "",
     dxfObj: null,
+    sourceFormat: "dxf",
+    sourceName: "",
 
     // drawing
     pathsByLayer: new Map(), // layer -> [ {pts, closed} ]
@@ -1100,6 +1103,7 @@ export function createViewer(dom) {
 
     // fit
     resetView();
+    dom.viewerEl?.dispatchEvent(new CustomEvent("vector-loaded"));
   }
 
   // --------- draw ---------
@@ -1109,7 +1113,7 @@ export function createViewer(dom) {
     ctx.clearRect(0, 0, W, H);
 
     // background
-    ctx.fillStyle = "#0a0f1a";
+    ctx.fillStyle = getCssVar("--viewer-bg", "#ffffff");
     ctx.fillRect(0, 0, W, H);
 
     // draw layers
@@ -1202,7 +1206,7 @@ export function createViewer(dom) {
   }
 
   function resetView() {
-    // “Reset view” = fit
+    // Reset de vista = ajustar al dibujo
     fitToBBox();
   }
 
@@ -1325,6 +1329,27 @@ export function createViewer(dom) {
 
   // --------- public API ---------
   async function loadFromFile(file) {
+    const name = file?.name || "archivo";
+    const lower = name.toLowerCase();
+
+    if (lower.endsWith(".svg")) {
+      const text = await file.text();
+      const geometry = parseSvgToGeometry(text, { quality: 48, mmPerSvgUnit: "auto" });
+      loadGeometry(geometry, name, "svg");
+      return;
+    }
+
+    if (lower.endsWith(".pdf")) {
+      const buf = await file.arrayBuffer();
+      const geometry = await parsePdfToGeometry(buf, { quality: 48 });
+      loadGeometry(geometry, name, "pdf");
+      return;
+    }
+
+    if (!lower.endsWith(".dxf")) {
+      throw new Error("Formato no soportado. Usa DXF, SVG o PDF vectorial.");
+    }
+
     const buf = await file.arrayBuffer();
 
     // intento 1: UTF-8
@@ -1344,12 +1369,14 @@ export function createViewer(dom) {
       }
     }
 
-    await loadFromText(text, file.name);
+    await loadFromText(text, name);
   }
 
   async function loadFromText(text, name = "archivo.dxf") {
     state.dxfText = text;
     state.dxfName = name;
+    state.sourceName = name;
+    state.sourceFormat = "dxf";
     dom.infoFile.textContent = name;
 
     const Parser = window.DxfParser;
@@ -1386,10 +1413,106 @@ export function createViewer(dom) {
     ingestDxf(obj, text);
   }
 
+  function loadGeometry(geometry, name = "archivo.svg", sourceFormat = "vector") {
+    const polys = geometry?.polys || [];
+    if (!Array.isArray(polys) || polys.length === 0) {
+      throw new Error("No hay geometría vectorial compatible para mostrar.");
+    }
+
+    state.dxfObj = null;
+    state.sourceFormat = sourceFormat || "vector";
+    state.sourceName = name || "archivo";
+    state.dxfText = "";
+    state.dxfName = `${sanitizeBaseName(name)}.dxf`;
+    state.pathsByLayer.clear();
+    state.layers.clear();
+    state.bbox = bboxInit();
+    state.entCount = 0;
+    state.insunits = 4; // geometría canónica en mm
+
+    for (const poly of polys) {
+      const layer = poly.layer || "0";
+      if (!state.layers.has(layer)) {
+        state.layers.set(layer, { visible: true, color: poly.color || "#111111", count: 0 });
+      }
+      state.layers.get(layer).count++;
+      const pts = (poly.pts || []).filter(q => Number.isFinite(q?.x) && Number.isFinite(q?.y));
+      if (pts.length >= 2) {
+        if (!state.pathsByLayer.has(layer)) state.pathsByLayer.set(layer, []);
+        state.pathsByLayer.get(layer).push({ pts, closed: !!poly.closed });
+        for (const q of pts) bboxAdd(state.bbox, q.x, q.y);
+        state.entCount++;
+      }
+    }
+
+    dom.infoFile.textContent = name || "—";
+    dom.infoEnt.textContent = String(state.entCount || 0);
+    dom.infoLay.textContent = String(state.layers.size || 0);
+    updateUnitsUI();
+    updateDimsUI();
+    renderLayersUI();
+    resetView();
+    dom.viewerEl?.dispatchEvent(new CustomEvent("vector-loaded"));
+  }
+
+  function getCurrentGeometry({ visibleOnly = false } = {}) {
+    const eff = getEffectiveUnits();
+    const polys = [];
+    for (const [layer, paths] of state.pathsByLayer.entries()) {
+      const L = state.layers.get(layer);
+      if (visibleOnly && L && !L.visible) continue;
+      for (const p of paths || []) {
+        const pts = (p.pts || []).map(q => ({ x: q.x * eff.mm, y: q.y * eff.mm }));
+        if (pts.length >= 2) {
+          polys.push({ pts, closed: !!p.closed, layer, color: L?.color || "#000000" });
+        }
+      }
+    }
+    return {
+      polys,
+      units: "mm",
+      sourceFormat: state.sourceFormat || "dxf",
+      bbox: geometryBBox(polys),
+      meta: { sourceName: state.sourceName || state.dxfName || dom.infoFile?.textContent || "export" },
+    };
+  }
+
+  function exportCurrent(format = "dxf", options = {}) {
+    const geometry = getCurrentGeometry({ visibleOnly: !!options.visibleOnly });
+    if (!geometry.polys.length) return null;
+
+    const base = sanitizeBaseName(state.sourceName || state.dxfName || dom.infoFile?.textContent || "export");
+    const f = String(format || "dxf").toLowerCase();
+
+    if (f === "svg") {
+      return {
+        data: geometryToSvg(geometry, options),
+        name: `${base}.svg`,
+        mime: "image/svg+xml",
+      };
+    }
+
+    if (f === "pdf") {
+      return {
+        data: geometryToPdfBytes(geometry, options),
+        name: `${base}.pdf`,
+        mime: "application/pdf",
+      };
+    }
+
+    return {
+      data: geometryToDxfR12(geometry, { ...options, insunits: Number(options.insunits ?? 4) }),
+      name: `${base}.dxf`,
+      mime: "application/dxf",
+    };
+  }
+
   function clear() {
     state.dxfText = "";
     state.dxfName = "";
     state.dxfObj = null;
+    state.sourceFormat = "dxf";
+    state.sourceName = "";
     state.pathsByLayer.clear();
     state.layers.clear();
     state.bbox = bboxInit();
@@ -1422,16 +1545,20 @@ export function createViewer(dom) {
   }
 
   function getCurrentDxf() {
-    return state.dxfText ? { text: state.dxfText, name: state.dxfName || "export.dxf" } : null;
+    const payload = exportCurrent("dxf", { insunits: 4 });
+    return payload ? { text: payload.data, name: payload.name || "export.dxf" } : null;
   }
 
   return {
     loadFromFile,
     loadFromText,
+    loadGeometry,
     clear,
     resetView,
     setUnitsOverride,
     getCurrentDxf,
+    getCurrentGeometry,
+    exportCurrent,
     setRulerActive,
     isRulerActive,
   };
