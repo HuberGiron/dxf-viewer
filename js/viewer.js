@@ -1,6 +1,17 @@
 import { parseSvgToGeometry, parsePdfToGeometry, geometryToDxfR12, geometryToSvg, geometryToPdfBytes, geometryBBox, sanitizeBaseName } from "./vector-utils.js";
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
+const QUALITY_PRESETS = {
+  "low": { label: "Baja", quality: 16, segments: 24, stitchToleranceMm: 0.08 },
+  "medium": { label: "Media", quality: 32, segments: 48, stitchToleranceMm: 0.06 },
+  "high": { label: "Alta", quality: 64, segments: 96, stitchToleranceMm: 0.05 },
+  "very-high": { label: "Muy alta", quality: 128, segments: 160, stitchToleranceMm: 0.035 },
+};
+
+function resolveQualityPreset(value) {
+  return QUALITY_PRESETS[String(value || "high")] || QUALITY_PRESETS.high;
+}
+
 function fmt(n, d = 3) {
   if (!isFinite(n)) return "—";
   return Number(n).toFixed(d);
@@ -169,6 +180,7 @@ export function createViewer(dom) {
     dxfObj: null,
     sourceFormat: "dxf",
     sourceName: "",
+    sourcePayload: null,
 
     // drawing
     pathsByLayer: new Map(), // layer -> [ {pts, closed} ]
@@ -177,6 +189,7 @@ export function createViewer(dom) {
     // metrics
     bbox: bboxInit(),
     entCount: 0,
+    vertexCount: 0,
 
     // view
     view: { scale: 1, panX: 0, panY: 0, cx: 0, cy: 0 },
@@ -185,6 +198,9 @@ export function createViewer(dom) {
     insunits: 0,
     unitsOverride: "auto",
 
+    // advanced conversion options
+    advanced: { curveQuality: "high", joinContinuous: true },
+
     // ruler
     ruler: { active: false, p0: null, p1: null, drawing: false },
 
@@ -192,6 +208,93 @@ export function createViewer(dom) {
     dragging: false,
     lastMouse: { x: 0, y: 0 },
   };
+
+  function getQualityOptions() {
+    return resolveQualityPreset(state.advanced.curveQuality);
+  }
+
+  function curveSegments(multiplier = 1, min = 8, max = 512) {
+    const q = getQualityOptions();
+    return clamp(Math.round(q.segments * multiplier), min, max);
+  }
+
+  function getExportOptions(extra = {}) {
+    const q = getQualityOptions();
+    const stitchToleranceMm = state.advanced.joinContinuous ? q.stitchToleranceMm : 0;
+    return { quality: q.quality, stitchToleranceMm, ...extra };
+  }
+
+  function updateGeneratedVertexCount() {
+    let total = 0;
+    for (const paths of state.pathsByLayer.values()) {
+      for (const p of paths || []) total += (p.pts || []).length;
+    }
+    state.vertexCount = total;
+    if (dom.infoPts) dom.infoPts.textContent = total ? String(total) : "—";
+  }
+
+  function snapshotLayerVisibility() {
+    const m = new Map();
+    for (const [name, layer] of state.layers.entries()) m.set(name, !!layer.visible);
+    return m;
+  }
+
+  function restoreLayerVisibility(previousVisibility) {
+    if (!(previousVisibility instanceof Map)) return;
+    for (const [name, layer] of state.layers.entries()) {
+      if (previousVisibility.has(name)) layer.visible = previousVisibility.get(name);
+    }
+  }
+
+  function setAdvancedOptions(options = {}) {
+    const nextQuality = String(options.curveQuality || state.advanced.curveQuality || "high");
+    state.advanced.curveQuality = QUALITY_PRESETS[nextQuality] ? nextQuality : "high";
+    if (typeof options.joinContinuous !== "undefined") {
+      state.advanced.joinContinuous = !!options.joinContinuous;
+    }
+  }
+
+  async function rebuildFromSource({ preserveView = true } = {}) {
+    const src = state.sourcePayload;
+    if (!src) {
+      updateGeneratedVertexCount();
+      redraw();
+      return;
+    }
+
+    const previousVisibility = snapshotLayerVisibility();
+
+    try {
+      if (src.format === "dxf") {
+        const obj = src.obj || new window.DxfParser().parseSync(src.text);
+        src.obj = obj;
+        ingestDxf(obj, src.text, { preserveView, previousVisibility });
+        return;
+      }
+
+      if (src.format === "svg") {
+        const geometry = parseSvgToGeometry(src.text, getExportOptions({ mmPerSvgUnit: "auto" }));
+        loadGeometry(geometry, src.name, "svg", { preserveView, previousVisibility });
+        return;
+      }
+
+      if (src.format === "pdf") {
+        const geometry = await parsePdfToGeometry(src.buffer.slice(0), getExportOptions());
+        loadGeometry(geometry, src.name, "pdf", { preserveView, previousVisibility });
+        return;
+      }
+    } catch (err) {
+      console.error(err);
+      if (dom.unitsNote) {
+        dom.unitsNote.textContent = err?.message || String(err);
+      }
+    }
+  }
+
+  async function applyAdvancedOptions(options = {}) {
+    setAdvancedOptions(options);
+    await rebuildFromSource({ preserveView: true });
+  }
 
   // --------- canvas sizing ---------
   function resizeCanvas() {
@@ -494,10 +597,10 @@ export function createViewer(dom) {
         const r = Number(e.radius ?? e.r);
 
         if (!parentM) {
-          addCircleAsPoly(layer, cx, cy, r, 96);
+          addCircleAsPoly(layer, cx, cy, r, curveSegments(1.5, 32, 512));
         } else {
           const pts = [];
-          const seg = 96;
+          const seg = curveSegments(1.5, 32, 512);
           for (let i = 0; i <= seg; i++) {
             const t = (i / seg) * TAU;
             pts.push({ x: cx + r * Math.cos(t), y: cy + r * Math.sin(t) });
@@ -524,14 +627,14 @@ export function createViewer(dom) {
 
         if (!parentM) {
           // addArcAsPoly ya autodetecta rad/grados
-          addArcAsPoly(layer, cx, cy, r, a0, a1, 96);
+          addArcAsPoly(layer, cx, cy, r, a0, a1, curveSegments(1.5, 32, 512));
         } else {
           let s = looksLikeDegrees ? (a0 * Math.PI) / 180 : a0;
           let t = looksLikeDegrees ? (a1 * Math.PI) / 180 : a1;
 
           while (t < s) t += TAU;
           const span = t - s;
-          const n = clamp(Math.ceil(96 * ((Math.abs(span) / TAU) || 1)), 8, 512);
+          const n = clamp(Math.ceil(curveSegments(1.5, 32, 512) * ((Math.abs(span) / TAU) || 1)), 8, 512);
 
           const pts = [];
           for (let i = 0; i <= n; i++) {
@@ -614,7 +717,7 @@ export function createViewer(dom) {
     }
   }
 
-  function ingestDxf(dxfObj, rawText) {
+  function ingestDxf(dxfObj, rawText, options = {}) {
     state.dxfObj = dxfObj;
     state.entCount = 0;
     state.pathsByLayer.clear();
@@ -714,7 +817,7 @@ export function createViewer(dom) {
       }
 
       const span = t1 - t0;
-      const seg = clamp(Math.ceil(128 * (Math.abs(span) / TAU || 1)), 12, 512);
+      const seg = clamp(Math.ceil(curveSegments(2, 48, 512) * (Math.abs(span) / TAU || 1)), 12, 512);
 
       const pts = [];
       for (let i = 0; i <= seg; i++) {
@@ -799,7 +902,7 @@ export function createViewer(dom) {
       for (let i = 0; i < segCount; i++) {
         const a = verts[i];
         const b = verts[(i + 1) % verts.length];
-        const segPts = bulgeSegmentPoints(a, b, a.bulge || 0, 48);
+        const segPts = bulgeSegmentPoints(a, b, a.bulge || 0, curveSegments(1, 12, 256));
 
         if (segPts.length) {
           if (pts.length) pts.pop(); // evitar duplicado entre segmentos
@@ -985,7 +1088,7 @@ export function createViewer(dom) {
           const cy = Number(e.center?.y ?? e.y);
           const r = Number(e.radius ?? e.r);
           if (!parentM) {
-            addCircleAsPoly(layer, cx, cy, r, 96);
+            addCircleAsPoly(layer, cx, cy, r, curveSegments(1.5, 32, 512));
           } else {
             const pts = [];
             const seg = 96;
@@ -1005,13 +1108,13 @@ export function createViewer(dom) {
           const a0 = Number(e.startAngle);
           const a1 = Number(e.endAngle);
           if (!parentM) {
-            addArcAsPoly(layer, cx, cy, r, a0, a1, 96);
+            addArcAsPoly(layer, cx, cy, r, a0, a1, curveSegments(1.5, 32, 512));
           } else {
             let s = (a0 * Math.PI) / 180;
             let t = (a1 * Math.PI) / 180;
             while (t < s) t += TAU;
             const span = t - s;
-            const n = clamp(Math.ceil(96 * (span / TAU)), 8, 512);
+            const n = clamp(Math.ceil(curveSegments(1.5, 32, 512) * (span / TAU)), 8, 512);
             const pts = [];
             for (let i = 0; i <= n; i++) {
               const ang = s + (span * i) / n;
@@ -1094,15 +1197,18 @@ export function createViewer(dom) {
     }
 
     // info UI
+    restoreLayerVisibility(options.previousVisibility);
     dom.infoFile.textContent = state.dxfName || "—";
     dom.infoEnt.textContent = String(state.entCount || 0);
     dom.infoLay.textContent = String(state.layers.size || 0);
+    updateGeneratedVertexCount();
     updateUnitsUI();
     updateDimsUI();
     renderLayersUI();
 
     // fit
-    resetView();
+    if (options.preserveView) redraw();
+    else resetView();
     dom.viewerEl?.dispatchEvent(new CustomEvent("vector-loaded"));
   }
 
@@ -1334,14 +1440,16 @@ export function createViewer(dom) {
 
     if (lower.endsWith(".svg")) {
       const text = await file.text();
-      const geometry = parseSvgToGeometry(text, { quality: 48, mmPerSvgUnit: "auto" });
+      state.sourcePayload = { format: "svg", name, text };
+      const geometry = parseSvgToGeometry(text, getExportOptions({ mmPerSvgUnit: "auto" }));
       loadGeometry(geometry, name, "svg");
       return;
     }
 
     if (lower.endsWith(".pdf")) {
       const buf = await file.arrayBuffer();
-      const geometry = await parsePdfToGeometry(buf, { quality: 48 });
+      state.sourcePayload = { format: "pdf", name, buffer: buf.slice(0) };
+      const geometry = await parsePdfToGeometry(buf, getExportOptions());
       loadGeometry(geometry, name, "pdf");
       return;
     }
@@ -1377,6 +1485,7 @@ export function createViewer(dom) {
     state.dxfName = name;
     state.sourceName = name;
     state.sourceFormat = "dxf";
+    state.sourcePayload = { format: "dxf", name, text, obj: null };
     dom.infoFile.textContent = name;
 
     const Parser = window.DxfParser;
@@ -1386,6 +1495,7 @@ export function createViewer(dom) {
     let obj = null;
     try {
       obj = p.parseSync(text);
+      if (state.sourcePayload?.format === "dxf") state.sourcePayload.obj = obj;
       } catch (err) {
         console.error(err);
 
@@ -1413,7 +1523,7 @@ export function createViewer(dom) {
     ingestDxf(obj, text);
   }
 
-  function loadGeometry(geometry, name = "archivo.svg", sourceFormat = "vector") {
+  function loadGeometry(geometry, name = "archivo.svg", sourceFormat = "vector", options = {}) {
     const polys = geometry?.polys || [];
     if (!Array.isArray(polys) || polys.length === 0) {
       throw new Error("No hay geometría vectorial compatible para mostrar.");
@@ -1445,13 +1555,16 @@ export function createViewer(dom) {
       }
     }
 
+    restoreLayerVisibility(options.previousVisibility);
     dom.infoFile.textContent = name || "—";
     dom.infoEnt.textContent = String(state.entCount || 0);
     dom.infoLay.textContent = String(state.layers.size || 0);
+    updateGeneratedVertexCount();
     updateUnitsUI();
     updateDimsUI();
     renderLayersUI();
-    resetView();
+    if (options.preserveView) redraw();
+    else resetView();
     dom.viewerEl?.dispatchEvent(new CustomEvent("vector-loaded"));
   }
 
@@ -1478,7 +1591,8 @@ export function createViewer(dom) {
   }
 
   function exportCurrent(format = "dxf", options = {}) {
-    const geometry = getCurrentGeometry({ visibleOnly: !!options.visibleOnly });
+    const exportOptions = getExportOptions(options);
+    const geometry = getCurrentGeometry({ visibleOnly: !!exportOptions.visibleOnly });
     if (!geometry.polys.length) return null;
 
     const base = sanitizeBaseName(state.sourceName || state.dxfName || dom.infoFile?.textContent || "export");
@@ -1486,7 +1600,7 @@ export function createViewer(dom) {
 
     if (f === "svg") {
       return {
-        data: geometryToSvg(geometry, options),
+        data: geometryToSvg(geometry, exportOptions),
         name: `${base}.svg`,
         mime: "image/svg+xml",
       };
@@ -1494,14 +1608,14 @@ export function createViewer(dom) {
 
     if (f === "pdf") {
       return {
-        data: geometryToPdfBytes(geometry, options),
+        data: geometryToPdfBytes(geometry, exportOptions),
         name: `${base}.pdf`,
         mime: "application/pdf",
       };
     }
 
     return {
-      data: geometryToDxfR12(geometry, { ...options, insunits: Number(options.insunits ?? 4) }),
+      data: geometryToDxfR12(geometry, { ...exportOptions, insunits: Number(exportOptions.insunits ?? 4) }),
       name: `${base}.dxf`,
       mime: "application/dxf",
     };
@@ -1513,10 +1627,12 @@ export function createViewer(dom) {
     state.dxfObj = null;
     state.sourceFormat = "dxf";
     state.sourceName = "";
+    state.sourcePayload = null;
     state.pathsByLayer.clear();
     state.layers.clear();
     state.bbox = bboxInit();
     state.entCount = 0;
+    state.vertexCount = 0;
     state.insunits = 0;
 
     // reset view
@@ -1525,6 +1641,7 @@ export function createViewer(dom) {
     // reset UI
     dom.infoFile.textContent = "—";
     dom.infoEnt.textContent = "—";
+    if (dom.infoPts) dom.infoPts.textContent = "—";
     dom.infoLay.textContent = "—";
     dom.infoUnits.textContent = "—";
     dom.infoDims.textContent = "—";
@@ -1553,6 +1670,9 @@ export function createViewer(dom) {
     loadFromFile,
     loadFromText,
     loadGeometry,
+    setAdvancedOptions,
+    applyAdvancedOptions,
+    getExportOptions,
     clear,
     resetView,
     setUnitsOverride,

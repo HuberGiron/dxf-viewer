@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Corte Laser - Visor y convertidor vectorial IBERO</title>
+  <title>Corte Laser — Visor y convertidor vectorial IBERO</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="icon" href="favicon.ico" type="image/x-icon">
   <!-- DXF parser (UMD) expone window.DxfParser -->
@@ -48,9 +48,30 @@
       <div class="card">
         <h2>Info archivo</h2>
 
+        <div class="advanced-options" aria-label="Opciones avanzadas para corte láser">
+          <div class="advanced-title">Opciones avanzadas</div>
+          <div class="advanced-fields">
+            <label class="advanced-field" for="curveQuality">
+              <span>Calidad de curvas</span>
+              <select id="curveQuality" class="select compact subtle">
+                <option value="low">Baja</option>
+                <option value="medium">Media</option>
+                <option value="high" selected>Alta</option>
+                <option value="very-high">Muy alta</option>
+              </select>
+            </label>
+            <label class="advanced-check" title="Conserva trayectorias continuas cuando los extremos coinciden o están muy cerca.">
+              <input id="joinContinuous" type="checkbox" checked />
+              <span>Unir trazos continuos</span>
+            </label>
+          </div>
+          <div class="advanced-note">Para corte láser conviene una trayectoria continua y limpia, no muchos cortes separados. La calidad sólo cambia curvas, arcos, círculos y splines; las líneas rectas se conservan igual.</div>
+        </div>
+
         <dl class="kv">
           <dt>Archivo</dt><dd id="infoFile">—</dd>
           <dt>Entidades / trazos</dt><dd id="infoEnt">—</dd>
+          <dt>Vértices generados</dt><dd id="infoPts">—</dd>
           <dt>Capas</dt><dd id="infoLay">—</dd>
           <dt>Unidades detectadas</dt><dd id="infoUnits">—</dd>
 

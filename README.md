@@ -13,8 +13,9 @@ Visor web estático para archivos vectoriales de corte láser. La conversión se
 1. Abrir la aplicación en un servidor local.
 2. Cargar un archivo `.dxf`, `.svg` o `.pdf` vectorial.
 3. Revisar dimensiones, capas y trazos en el visor.
-4. Seleccionar salida: SVG, DXF o PDF.
-5. Descargar.
+4. Ajustar, si hace falta, las opciones avanzadas discretas: calidad de curvas y unión de trazos continuos.
+5. Seleccionar salida: SVG, DXF o PDF.
+6. Descargar.
 
 ## Estructura actual
 
@@ -29,7 +30,10 @@ Visor web estático para archivos vectoriales de corte láser. La conversión se
 
 - Encabezado simplificado a “Corte Laser”.
 - Se eliminó el modo separado “Convertir formatos”.
-- Se eliminaron los controles visibles de calidad de curvas y unión de segmentos para evitar ambigüedad en el flujo principal.
+- Se agregó una sección discreta de opciones avanzadas dentro de “Info archivo”.
+- Calidad de curvas simplificada a cuatro niveles: Baja, Media, Alta y Muy alta. Al cambiarla, el archivo se reprocesa desde la fuente original para que la vista y la exportación usen la nueva discretización.
+- Se agregó el contador “Vértices generados”, útil para verificar el efecto de la calidad de curvas.
+- Unión de trazos continuos activada por defecto para favorecer trayectorias limpias de corte láser.
 - Descarga mediante una sola lista de formato de salida: SVG, DXF o PDF.
 - Botón único “Descargar”, habilitado cuando hay geometría vectorial cargada.
 - Reset de vista movido al área del visor como control discreto.
@@ -38,3 +42,9 @@ Visor web estático para archivos vectoriales de corte láser. La conversión se
 ## Notas técnicas
 
 La geometría interna se normaliza como polilíneas en milímetros con eje Y hacia arriba. Los SVG se interpretan con escala automática cuando declaran `width`, `height` o `viewBox`. Los PDF se leen desde comandos vectoriales básicos de contenido (`m`, `l`, `c`, `re`, `S`, `s`, `f`).
+
+
+## Opciones avanzadas
+
+- **Calidad de curvas** controla cuántos puntos se generan al convertir arcos, círculos, elipses, splines o curvas Bézier a polilíneas. “Alta” queda como valor recomendado para corte láser. “Muy alta” produce curvas más suaves, pero también archivos más pesados. Este ajuste sólo cambia geometría curva; archivos formados únicamente por líneas rectas se verán igual en todos los niveles.
+- **Unir trazos continuos** intenta fusionar líneas o polilíneas abiertas cuando sus extremos coinciden o están muy cerca. Esto reduce cortes separados y favorece trayectorias continuas, que suelen ser más adecuadas para fabricación láser.

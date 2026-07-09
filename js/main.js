@@ -20,9 +20,12 @@ const dom = {
   // info
   infoFile: $("infoFile"),
   infoEnt: $("infoEnt"),
+  infoPts: $("infoPts"),
   infoLay: $("infoLay"),
   infoUnits: $("infoUnits"),
   unitsOverride: $("unitsOverride"),
+  curveQuality: $("curveQuality"),
+  joinContinuous: $("joinContinuous"),
   unitsNote: $("unitsNote"),
   infoDims: $("infoDims"),
   infoRuler: $("infoRuler"),
@@ -53,7 +56,8 @@ wireUI({ dom, viewer, setDownloadEnabled });
 // El formato lo define la lista "Salida".
 dom.btnDownload?.addEventListener("click", () => {
   const format = dom.downloadFormatEl?.value || "dxf";
-  const payload = viewer.exportCurrent(format, { insunits: 4 });
+  const exportOptions = viewer.getExportOptions({ insunits: 4 });
+  const payload = viewer.exportCurrent(format, exportOptions);
   downloadPayload(payload);
 });
 
