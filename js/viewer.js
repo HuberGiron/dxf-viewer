@@ -306,7 +306,7 @@ export function createViewer(dom) {
     redraw();
   }
 
-  window.addEventListener("resize", resizeCanvas);
+  new ResizeObserver(resizeCanvas).observe(canvas);
   resizeCanvas();
 
   // --------- transforms ---------
@@ -1317,86 +1317,86 @@ export function createViewer(dom) {
   }
 
   // --------- interactions ---------
-  canvas.addEventListener("mousedown", (e) => {
-    if (state.ruler.active) return;
-    state.dragging = true;
-    state.lastMouse = { x: e.clientX, y: e.clientY };
+  const pointers = new Map();
+  let gesture = false;
+  function localPoint(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+  function zoomBy(factor, point) {
+    const rect = canvas.getBoundingClientRect();
+    const p = point || { x: rect.width / 2, y: rect.height / 2 };
+    const before = screenToWorld(p.x, p.y);
+    state.view.scale = clamp(state.view.scale * factor, 0.0005, 1e6);
+    const after = screenToWorld(p.x, p.y);
+    state.view.cx += before.x - after.x;
+    state.view.cy += before.y - after.y;
+    redraw();
+  }
+  canvas.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    canvas.setPointerCapture(e.pointerId);
+    const p = localPoint(e);
+    if (!pointers.size) gesture = false;
+    pointers.set(e.pointerId, { ...p, start: p });
+    if (pointers.size > 1) gesture = true;
   });
-
-  window.addEventListener("mouseup", () => {
-    state.dragging = false;
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (state.ruler.active && state.ruler.drawing && state.ruler.p0) {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      state.ruler.p1 = screenToWorld(x, y);
-
-      updateRulerReadout();
-      redraw();
+  canvas.addEventListener("pointermove", e => {
+    const p = localPoint(e);
+    const old = pointers.get(e.pointerId);
+    if (!old) {
+      if (state.ruler.active && state.ruler.drawing && e.pointerType === "mouse") {
+        state.ruler.p1 = screenToWorld(p.x, p.y);
+        updateRulerReadout(); redraw();
+      }
       return;
     }
-
-    if (!state.dragging) return;
-    const dx = e.clientX - state.lastMouse.x;
-    const dy = e.clientY - state.lastMouse.y;
-    state.lastMouse = { x: e.clientX, y: e.clientY };
-    state.view.panX += dx;
-    state.view.panY += dy;
+    if (Math.hypot(p.x - old.start.x, p.y - old.start.y) > 6) gesture = true;
+    const before = [...pointers.values()];
+    pointers.set(e.pointerId, { ...p, start: old.start });
+    const after = [...pointers.values()];
+    if (before.length === 2) {
+      const center = pts => ({ x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 });
+      const c0 = center(before), c1 = center(after);
+      const distance = pts => Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const d0 = distance(before), d1 = distance(after);
+      if (d0 > 0 && d1 > 0) zoomBy(d1 / d0, c0);
+      state.view.panX += c1.x - c0.x;
+      state.view.panY += c1.y - c0.y;
+    } else if (!state.ruler.active) {
+      state.view.panX += p.x - old.x;
+      state.view.panY += p.y - old.y;
+    }
     redraw();
   });
-
-  canvas.addEventListener("wheel", (e) => {
+  canvas.addEventListener("pointerup", e => {
+    if (pointers.has(e.pointerId) && !gesture && state.ruler.active) rulerPoint(localPoint(e));
+    pointers.delete(e.pointerId);
+  });
+  for (const event of ["pointercancel", "lostpointercapture"]) {
+    canvas.addEventListener(event, e => { pointers.delete(e.pointerId); gesture = true; });
+  }
+  canvas.addEventListener("wheel", e => {
     e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    const before = screenToWorld(mx, my);
-
-    const k = Math.exp(-e.deltaY * 0.0015);
-    state.view.scale = clamp(state.view.scale * k, 0.0005, 1e6);
-
-    const after = screenToWorld(mx, my);
-    // keep point under mouse stable
-    state.view.cx += (before.x - after.x);
-    state.view.cy += (before.y - after.y);
-
-    redraw();
+    zoomBy(Math.exp(-e.deltaY * 0.0015), localPoint(e));
   }, { passive: false });
-
-  canvas.addEventListener("dblclick", () => resetView());
-
-  // Drop DXF
-  dom.viewerEl.addEventListener("dragover", (e) => {
-    e.preventDefault();
-  });
-  dom.viewerEl.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    const f = e.dataTransfer?.files?.[0];
-    if (!f) return;
-    await loadFromFile(f);
-  });
+  canvas.addEventListener("dblclick", () => { if (!state.ruler.active) resetView(); });
 
   // ruler click handling
   function updateRulerReadout() {
     if (!dom.infoRuler) return;
     if (!state.ruler.p0 || !state.ruler.p1) {
       dom.infoRuler.textContent = "—";
+      if (dom.rulerStatus) dom.rulerStatus.textContent = state.ruler.active ? "Toca el punto inicial y el final" : "";
       return;
     }
     const eff = getEffectiveUnits();
     const dmm = dist(state.ruler.p0, state.ruler.p1) * eff.mm;
     dom.infoRuler.textContent = `${dmm.toFixed(3)} mm`;
+    if (dom.rulerStatus) dom.rulerStatus.textContent = `Regla: ${dmm.toFixed(3)} mm`;
   }
 
-  canvas.addEventListener("click", (e) => {
-    if (!state.ruler.active) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+  function rulerPoint({ x, y }) {
     const wp = screenToWorld(x, y);
 
     if (!state.ruler.p0 || !state.ruler.drawing) {
@@ -1409,7 +1409,7 @@ export function createViewer(dom) {
     }
     updateRulerReadout();
     redraw();
-  });
+  }
 
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
@@ -1428,7 +1428,10 @@ export function createViewer(dom) {
   function setRulerActive(on) {
     state.ruler.active = !!on;
     dom.btnRuler.classList.toggle("on", state.ruler.active);
+    dom.btnRuler.setAttribute("aria-pressed", String(state.ruler.active));
+    canvas.style.cursor = state.ruler.active ? "crosshair" : "grab";
     if (!state.ruler.active) clearRuler();
+    updateRulerReadout();
   }
 
   function isRulerActive() { return !!state.ruler.active; }
@@ -1667,6 +1670,7 @@ export function createViewer(dom) {
   }
 
   return {
+    zoomBy,
     loadFromFile,
     loadFromText,
     loadGeometry,

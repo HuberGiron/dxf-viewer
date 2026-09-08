@@ -18,7 +18,7 @@
     </div>
 
     <div class="actions">
-      <label class="btn" for="dxfFile" id="btnPickDxf">Cargar DXF/SVG/PDF</label>
+      <button class="btn" type="button" id="btnPickDxf">Cargar DXF/SVG/PDF</button>
       <input id="dxfFile" class="file" type="file" accept=".dxf,.DXF,.svg,.SVG,.pdf,.PDF,image/svg+xml,application/pdf" />
 
       <div class="download-control" aria-label="Descarga">
@@ -33,18 +33,24 @@
         <button class="btn primary" id="btnDownload" type="button" disabled>Descargar</button>
       </div>
 
-      <button class="btn" id="btnRuler" type="button">Regla</button>
+      <button class="btn" id="btnRuler" type="button" aria-pressed="false">Regla</button>
     </div>
   </header>
 
   <main class="container">
     <section id="viewer" aria-label="Visor vectorial">
-      <canvas id="dxfCanvas" class="canvas2d"></canvas>
-      <button class="view-reset" id="btnReset" type="button" title="Ajustar la vista al dibujo">Reset vista</button>
-      <div class="hintbar">Pan: arrastra • Zoom: rueda • Doble click: ajustar vista • Regla: click inicio/fin • Drop: DXF/SVG/PDF vectorial</div>
+      <div class="viewer-tools" role="group" aria-label="Controles de vista">
+        <button class="view-reset" id="btnZoomOut" type="button" aria-label="Alejar">−</button>
+        <button class="view-reset" id="btnZoomIn" type="button" aria-label="Acercar">+</button>
+        <button class="view-reset" id="btnReset" type="button">Ajustar dibujo</button>
+        <span id="rulerStatus" role="status"></span>
+      </div>
+      <canvas id="dxfCanvas" class="canvas2d" aria-label="Dibujo vectorial"></canvas>
+      <div class="hintbar">Arrastra para mover · Rueda o pellizco para zoom · Regla: toca inicio y fin</div>
     </section>
 
     <aside id="stats">
+      <p id="fileStatus" class="note" role="status" aria-live="polite"></p>
       <div class="card">
         <h2>Info archivo</h2>
 
@@ -97,7 +103,8 @@
       <div class="card">
         <h2>Capas</h2>
         <div class="layers" id="layers"></div>
-        <p class="note">Las capas se usan para revisar/ocultar trazos. La exportación conserva todas las capas del archivo cargado.</p>
+        <label class="advanced-check export-visible"><input id="exportVisible" type="checkbox" /> Exportar solo capas visibles</label>
+        <p class="note">Las capas se usan para revisar/ocultar trazos. Por defecto se exportan todas las capas. Activa la opción para excluir las ocultas.</p>
       </div>
 
       <p class="note">

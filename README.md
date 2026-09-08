@@ -48,3 +48,31 @@ La geometría interna se normaliza como polilíneas en milímetros con eje Y hac
 
 - **Calidad de curvas** controla cuántos puntos se generan al convertir arcos, círculos, elipses, splines o curvas Bézier a polilíneas. “Alta” queda como valor recomendado para corte láser. “Muy alta” produce curvas más suaves, pero también archivos más pesados. Este ajuste sólo cambia geometría curva; archivos formados únicamente por líneas rectas se verán igual en todos los niveles.
 - **Unir trazos continuos** intenta fusionar líneas o polilíneas abiertas cuando sus extremos coinciden o están muy cerca. Esto reduce cortes separados y favorece trayectorias continuas, que suelen ser más adecuadas para fabricación láser.
+
+## Actualización de interfaz y uso móvil
+
+- Selector de salida ampliado para mostrar SVG, DXF y PDF sin recortes.
+- Encabezado adaptable y visor con herramientas y ayuda fuera del área de dibujo.
+- Controles de al menos 44 px, foco visible y botón de carga accesible con teclado.
+- Arrastre táctil, zoom con dos dedos y botones +/−; regla mediante dos toques.
+- Lectura de la regla junto al dibujo, sin tener que bajar al panel de información.
+- Opción **Exportar solo capas visibles**, desactivada inicialmente. Ocultar una capa
+  sigue sin eliminarla ni modificar el archivo original.
+- Mensajes de carga y exportación; arrastrar archivos usa el mismo manejo de errores
+  que el selector. Las unidades manuales vuelven a Auto al abrir otro archivo.
+
+### Instalación de esta actualización
+
+Extraer el ZIP en la raíz del repositorio, reemplazando los archivos existentes.
+Conservar la carpeta `js/`. No requiere backend ni nuevas dependencias de producción.
+Recargar la página sin caché después de subir los cambios.
+
+### Verificación y límites
+
+Comprobados: sintaxis de JavaScript, exportación de una geometría de prueba a
+SVG/DXF/PDF, relectura del PDF generado, filtrado de capas y eventos táctiles
+simulados para regla y zoom sin alterar dimensiones. La validación de eventos
+se realizó con un DOM simulado, no con un dispositivo físico.
+No se pudo completar la inspección visual en navegador en el entorno de trabajo;
+queda por confirmar el aspecto final y los gestos en Safari/Chrome móvil reales.
+Los límites existentes de importación de PDF y de entidades DXF siguen vigentes.

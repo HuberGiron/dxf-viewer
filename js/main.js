@@ -10,6 +10,10 @@ const dom = {
   btnDownload: $("btnDownload"),
   downloadFormatEl: $("downloadFormat"),
   btnReset: $("btnReset"),
+  btnZoomIn: $("btnZoomIn"),
+  btnZoomOut: $("btnZoomOut"),
+  rulerStatus: $("rulerStatus"),
+  fileStatus: $("fileStatus"),
   btnRuler: $("btnRuler"),
 
   // viewer
@@ -55,10 +59,14 @@ wireUI({ dom, viewer, setDownloadEnabled });
 // Descarga directa desde el archivo vectorial cargado.
 // El formato lo define la lista "Salida".
 dom.btnDownload?.addEventListener("click", () => {
+  try {
   const format = dom.downloadFormatEl?.value || "dxf";
-  const exportOptions = viewer.getExportOptions({ insunits: 4 });
+  const exportOptions = viewer.getExportOptions({ insunits: 4, visibleOnly: $("exportVisible").checked });
   const payload = viewer.exportCurrent(format, exportOptions);
+  if (!payload) throw new Error("No hay trazos para exportar. Revisa las capas visibles.");
   downloadPayload(payload);
+  dom.fileStatus.textContent = "Archivo exportado: " + payload.name;
+  } catch (err) { dom.fileStatus.textContent = err.message || String(err); }
 });
 
 setDownloadEnabled(false);
