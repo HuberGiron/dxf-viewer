@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Corte Laser — Visor y convertidor vectorial IBERO</title>
+  <title>Corte Laser — Visor, convertidor y CAD IBERO</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="cad-beta.css" />
   <link rel="icon" href="favicon.ico" type="image/x-icon">
-  <!-- DXF parser (UMD) expone window.DxfParser -->
   <script src="https://unpkg.com/dxf-parser@1.1.2/dist/dxf-parser.js"></script>
 </head>
 
@@ -17,7 +17,12 @@
       <h1>Corte Laser</h1>
     </div>
 
-    <div class="actions">
+    <nav class="app-tabs" aria-label="Modo de trabajo">
+      <button class="app-tab active" id="tabViewer" type="button" aria-selected="true">Visor / Convertidor</button>
+      <button class="app-tab" id="tabCad" type="button" aria-selected="false">CAD <span class="beta-chip">Beta</span></button>
+    </nav>
+
+    <div class="actions viewer-action" id="viewerActions">
       <button class="btn" type="button" id="btnPickDxf">Cargar DXF/SVG/PDF</button>
       <input id="dxfFile" class="file" type="file" accept=".dxf,.DXF,.svg,.SVG,.pdf,.PDF,image/svg+xml,application/pdf" />
 
@@ -35,9 +40,50 @@
 
       <button class="btn" id="btnRuler" type="button" aria-pressed="false">Regla</button>
     </div>
+
+    <div class="actions cad-action hidden" id="cadActions">
+      <button class="btn cad-action-compact" id="cadNew" type="button" title="Nuevo dibujo">
+        <svg class="cad-top-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 3h9l3 3v15H6zM14 3v4h4M9 12h6M12 9v6"/>
+        </svg>
+        <span>Nuevo</span>
+      </button>
+      <button class="btn cad-action-compact" id="cadOpen" type="button" title="Abrir o importar archivo">
+        <svg class="cad-top-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 7h7l2 2h9v10H3zM3 7V5h7l2 2"/>
+        </svg>
+        <span>Abrir</span>
+      </button>
+      <input id="cadFile" class="file" type="file" accept=".json,.svg,.SVG,.dxf,.DXF,application/json,image/svg+xml" />
+      <button class="btn cad-icon-btn" id="cadUndo" type="button" title="Deshacer (Ctrl+Z)" aria-label="Deshacer">
+        <svg class="cad-top-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 7L4 12l5 5M5 12h8a6 6 0 016 6"/>
+        </svg>
+      </button>
+      <button class="btn cad-icon-btn" id="cadRedo" type="button" title="Rehacer (Ctrl+Y)" aria-label="Rehacer">
+        <svg class="cad-top-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 7l5 5-5 5M19 12h-8a6 6 0 00-6 6"/>
+        </svg>
+      </button>
+      <label class="cad-filename-control" for="cadFileName" title="Nombre del archivo que se descargará">
+        <span>Nombre</span>
+        <input id="cadFileName" type="text" value="dibujo-cad" maxlength="80" spellcheck="false" />
+      </label>
+      <div class="download-control">
+        <label class="download-format" for="cadExportFormat">
+          <span>Salida</span>
+          <select id="cadExportFormat" class="select compact">
+            <option value="json" selected>JSON</option>
+            <option value="svg">SVG</option>
+            <option value="dxf">DXF</option>
+          </select>
+        </label>
+        <button class="btn primary" id="cadExport" type="button">Descargar</button>
+      </div>
+    </div>
   </header>
 
-  <main class="container">
+  <main class="container" id="viewerMode">
     <section id="viewer" aria-label="Visor vectorial">
       <div class="viewer-tools" role="group" aria-label="Controles de vista">
         <button class="view-reset" id="btnZoomOut" type="button" aria-label="Alejar">−</button>
@@ -110,6 +156,95 @@
       <p class="note">
         Nota: los PDF soportados deben contener trazos vectoriales simples. Si el PDF viene de un escaneo o imagen, no hay geometría de corte que extraer.
       </p>
+    </aside>
+  </main>
+
+  <main id="cadMode" class="cad-shell hidden" aria-label="CAD Beta">
+    <aside class="cad-toolbar" aria-label="Herramientas CAD">
+      <button class="cad-tool" data-tool="line" title="Línea (L)">／<span>Línea</span></button>
+      <button class="cad-tool" data-tool="rect" title="Rectángulo (R)">□<span>Rectángulo</span></button>
+      <button class="cad-tool" data-tool="circle" title="Círculo (C)">○<span>Círculo</span></button>
+      <button class="cad-tool" data-tool="point" title="Punto">·<span>Punto</span></button>
+      <div class="cad-tool-sep"></div>
+      <button class="cad-tool" data-tool="trim" title="Trim (T)">✂<span>Trim</span></button>
+      <button class="cad-tool select-tool" data-tool="select" title="Seleccionar (S)">
+        <svg class="cad-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l13 8-6 1.5L15 19l-2.2 1-3.1-6.4L5 17V3z"/></svg>
+        <span>Seleccionar</span>
+      </button>
+      <button class="cad-tool pan-tool" data-tool="pan" title="Mover vista (H)">
+        <svg class="cad-tool-icon hand-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 11V6.5a1.5 1.5 0 013 0V10 5.5a1.5 1.5 0 013 0V10 6.5a1.5 1.5 0 013 0V11 8a1.5 1.5 0 013 0v5.2c0 4.1-2.6 7.3-6.8 7.3h-1.7c-2.1 0-3.5-.9-4.7-2.5l-2.2-3a1.5 1.5 0 012.4-1.8L7.5 15V11z"/></svg>
+        <span>Mano</span>
+      </button>
+      <button class="cad-tool danger" data-tool="delete" title="Eliminar">⌫<span>Eliminar</span></button>
+    </aside>
+
+    <section class="cad-workarea">
+      <div class="cad-contextbar">
+        <div class="cad-primary-tools" aria-label="Herramientas principales">
+          <button class="cad-primary-tool" data-tool="dimension" type="button" title="Cota (D)">↔ Cota</button>
+        </div>
+        <div class="cad-constraint-strip" aria-label="Restricciones">
+          <span class="constraint-strip-label">Restricciones</span>
+          <button class="cad-constraint-action" data-constraint="coincident" type="button" disabled title="Coincidente">Coinc.</button>
+          <button class="cad-constraint-action" data-constraint="horizontal" type="button" disabled title="Horizontal">H</button>
+          <button class="cad-constraint-action" data-constraint="vertical" type="button" disabled title="Vertical">V</button>
+          <button class="cad-constraint-action" data-constraint="parallel" type="button" disabled title="Paralelo">∥</button>
+          <button class="cad-constraint-action" data-constraint="perpendicular" type="button" disabled title="Perpendicular">⊥</button>
+          <button class="cad-constraint-action" data-constraint="fixed" type="button" disabled title="Fijar punto seleccionado">Fijar</button>
+        </div>
+        <div class="cad-context-fields" id="cadContextFields"></div>
+        <div class="cad-view-buttons">
+          <button class="mini-btn" id="cadZoomOut">−</button>
+          <button class="mini-btn" id="cadZoomIn">+</button>
+          <button class="mini-btn" id="cadFit">Ajustar</button>
+        </div>
+      </div>
+      <canvas id="cadCanvas" class="cad-canvas" tabindex="0"></canvas>
+      <div class="cad-statusbar">
+        <span id="cadStatus">Listo · mm · precisión 0.01</span>
+        <span class="cad-legend"><i class="dot under"></i> libre <i class="dot full"></i> restringido <i class="dot conflict"></i> conflicto</span>
+        <span id="cadCursor">X 0.00 · Y 0.00</span>
+      </div>
+    </section>
+
+    <aside class="cad-properties">
+      <div class="card">
+        <h2>Selección</h2>
+        <div id="cadProperties" class="cad-props-empty">Selecciona una entidad.</div>
+      </div>
+
+      <details class="cad-side-details">
+        <summary>Snaps <span class="side-summary-note">Extremos · Medios · Centros…</span></summary>
+        <div class="side-details-body">
+          <div class="snap-grid">
+            <label><input id="snapEndpoint" type="checkbox" checked> Extremos</label>
+            <label><input id="snapMidpoint" type="checkbox" checked> Medios</label>
+            <label><input id="snapCenter" type="checkbox" checked> Centros</label>
+            <label><input id="snapIntersection" type="checkbox" checked> Intersección</label>
+            <label><input id="snapGrid" type="checkbox"> Rejilla</label>
+          </div>
+        </div>
+      </details>
+
+      <details class="cad-side-details">
+        <summary>
+          Croquis
+          <span class="side-summary-note" id="cadSketchSummary">0 libres · 0 conflictos</span>
+        </summary>
+        <div class="side-details-body">
+          <div class="sketch-status-grid">
+            <div><strong id="cadUnderCount">0</strong><span>Libres</span></div>
+            <div><strong id="cadFullCount">0</strong><span>Restringidos</span></div>
+            <div><strong id="cadConflictCount">0</strong><span>Conflictos</span></div>
+          </div>
+          <dl class="kv mini-kv">
+            <dt>Entidades</dt><dd id="cadEntityCount">0</dd>
+            <dt>Cotas</dt><dd id="cadDimensionCount">0</dd>
+            <dt>Restricciones</dt><dd id="cadConstraintCount">0</dd>
+            <dt>Origen</dt><dd id="cadOriginInfo">0.00, 0.00</dd>
+          </dl>
+        </div>
+      </details>
     </aside>
   </main>
 

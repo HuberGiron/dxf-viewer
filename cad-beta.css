@@ -1,0 +1,482 @@
+/* CAD Beta v2 */
+.hidden{display:none !important;}
+.app-tabs{display:flex;gap:6px;align-items:center;margin-left:auto;}
+.app-tab{
+  border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.10);color:white;
+  padding:8px 12px;border-radius:11px;min-height:40px;font-weight:800;cursor:pointer;
+}
+.app-tab.active{background:white;color:#172033;}
+.beta-chip{
+  display:inline-block;margin-left:4px;padding:1px 5px;font-size:9px;line-height:1.4;border-radius:999px;
+  background:#172033;color:white;vertical-align:1px;
+}
+.app-tab:not(.active) .beta-chip{background:white;color:#172033;}
+
+.cad-shell{flex:1;min-height:0;display:grid;grid-template-columns:86px minmax(0,1fr) 300px;background:#eef1f4;}
+.cad-toolbar{
+  background:#fff;border-right:1px solid var(--divider);padding:8px;display:flex;flex-direction:column;gap:6px;overflow:auto;
+}
+.cad-tool{
+  width:100%;min-height:58px;border:1px solid transparent;border-radius:10px;background:transparent;cursor:pointer;color:#344054;
+  font-size:22px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+}
+.cad-tool span{font-size:10px;font-weight:750;}
+.cad-tool:hover{background:#f8fafc;border-color:#e4e7ec;}
+.cad-tool.active{color:var(--ibero-red-dark);background:rgba(224,0,52,.08);border-color:rgba(224,0,52,.35);}
+.cad-tool.danger{color:#b42318;}
+.cad-tool-sep{height:1px;background:var(--divider);margin:3px 4px;}
+
+.cad-workarea{position:relative;min-width:0;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden;}
+.cad-contextbar{
+  min-height:50px;background:#fff;border-bottom:1px solid var(--divider);display:flex;gap:10px;align-items:center;
+  justify-content:space-between;padding:6px 10px;
+}
+.cad-context-fields{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0;}
+.context-hint{font-size:12px;color:#475467;}
+.context-title{font-size:11px;color:#667085;font-weight:800;text-transform:uppercase;letter-spacing:.3px;margin-right:3px;}
+.context-action{
+  min-height:34px;padding:5px 10px;border:1px solid #d0d5dd;background:white;border-radius:8px;cursor:pointer;font-size:11px;font-weight:750;color:#344054;
+}
+.context-action:hover{border-color:#98a2b3;background:#f8fafc;}
+.context-action.primary{background:#172033;color:white;border-color:#172033;}
+.context-action.danger{color:#b42318;border-color:#fecdca;background:#fff6f5;}
+.context-input{
+  display:flex;align-items:center;gap:6px;padding:2px 4px 2px 8px;border:1px solid #d0d5dd;border-radius:9px;background:#fff;font-size:11px;font-weight:750;color:#475467;
+}
+.context-input input{width:92px;min-height:30px;border:0;border-left:1px solid #eaecf0;padding:4px 7px;outline:none;font:inherit;}
+.context-badge{font-size:10px;font-weight:800;padding:4px 7px;border-radius:999px;background:#ecfdf3;color:#027a48;border:1px solid #abefc6;}
+.context-badge.warn{background:#fffaeb;color:#b54708;border-color:#fedf89;}
+.context-badge.error{background:#fef3f2;color:#b42318;border-color:#fecdca;}
+
+.cad-view-buttons{display:flex;gap:5px;flex-shrink:0;}
+.mini-btn{min-height:34px;min-width:36px;padding:5px 9px;border:1px solid var(--divider);background:#fff;border-radius:8px;cursor:pointer;font-weight:750;}
+.cad-canvas{width:100%;height:100%;display:block;background:#fff;touch-action:none;outline:none;cursor:crosshair;}
+.cad-statusbar{
+  min-height:30px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 10px;border-top:1px solid var(--divider);
+  background:#fff;color:#667085;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+}
+.cad-legend{display:flex;align-items:center;gap:4px;white-space:nowrap;}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-left:7px;}
+.dot.under{background:#344054}.dot.full{background:#00d084}.dot.conflict{background:#f04438}
+
+.cad-properties{background:#fff;border-left:1px solid var(--divider);padding:12px;overflow:auto;}
+.cad-properties .card{box-shadow:none;}
+.compact-card{padding:10px;}
+.cad-props-empty{font-size:12px;color:#667085;}
+.selection-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+.selection-title{font-size:12px;font-weight:800;color:#344054;}
+.state-pill{font-size:10px;font-weight:800;padding:3px 7px;border-radius:999px;}
+.state-pill.under{background:#f2f4f7;color:#344054;}
+.state-pill.full{background:#ecfdf3;color:#027a48;}
+.state-pill.conflict{background:#fef3f2;color:#b42318;}
+.relation-section{margin-top:10px;padding-top:8px;border-top:1px solid #eaecf0;}
+.relation-title{font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:#667085;font-weight:850;margin-bottom:5px;}
+.relation-list{display:flex;flex-direction:column;gap:5px;}
+.relation-row{display:flex;align-items:center;justify-content:space-between;gap:7px;padding:6px 7px;background:#f8fafc;border:1px solid #eaecf0;border-radius:8px;font-size:11px;color:#344054;}
+.relation-row.conflict{background:#fef3f2;border-color:#fecdca;color:#b42318;}
+.relation-remove{border:0;background:transparent;color:#98a2b3;cursor:pointer;font-size:15px;line-height:1;padding:0 2px;}
+.relation-remove:hover{color:#b42318;}
+.selection-meta{font-size:10px;color:#98a2b3;font-family:ui-monospace,monospace;}
+
+.snap-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.snap-grid label{display:flex;align-items:center;gap:5px;font-size:11px;color:#475467;min-height:30px;}
+.sketch-status-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:9px;}
+.sketch-status-grid div{padding:7px 3px;border:1px solid #eaecf0;border-radius:8px;text-align:center;background:#f8fafc;}
+.sketch-status-grid strong{display:block;font-size:15px;color:#344054;}
+.sketch-status-grid div:nth-child(2) strong{color:#027a48;}
+.sketch-status-grid div:nth-child(3) strong{color:#b42318;}
+.sketch-status-grid span{display:block;font-size:9px;color:#667085;margin-top:1px;}
+.mini-kv{display:grid;grid-template-columns:1fr auto;gap:3px 8px;}
+.mini-kv dt,.mini-kv dd{margin:0;font-size:10px;line-height:1.5;}
+.mini-kv dd{text-align:right;}
+
+@media(max-width:1080px){
+  .topbar{align-items:flex-start}.app-tabs{order:3;width:100%;margin-left:0}.cad-shell{grid-template-columns:72px minmax(0,1fr) 270px}
+}
+@media(max-width:780px){
+  .cad-shell{grid-template-columns:64px minmax(0,1fr)}.cad-properties{display:none}.cad-tool{min-height:52px;font-size:19px}.cad-tool span{font-size:9px}
+  .cad-legend{display:none}
+}
+
+/* CAD Beta v4: selección de cotas y subelementos */
+.relation-row.active{border-color:#b692f6;background:#f4f3ff;}
+.relation-select{
+  flex:1;min-width:0;border:0;background:transparent;padding:0;text-align:left;color:inherit;
+  font:inherit;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.relation-select:hover{text-decoration:underline;}
+
+
+/* CAD Beta v7: flujo de selección y herramientas principales */
+.cad-primary-tools{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  flex-shrink:0;
+  padding-right:9px;
+  margin-right:2px;
+  border-right:1px solid #eaecf0;
+}
+.cad-primary-tool{
+  min-height:36px;
+  padding:6px 10px;
+  border:1px solid #d0d5dd;
+  border-radius:9px;
+  background:#fff;
+  color:#344054;
+  cursor:pointer;
+  font-size:11px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.cad-primary-tool:hover{background:#f8fafc;border-color:#98a2b3;}
+.cad-primary-tool.active{
+  background:#172033;
+  border-color:#172033;
+  color:#fff;
+}
+.cad-contextbar{justify-content:flex-start;}
+.cad-context-fields{flex:1;}
+.cad-view-buttons{margin-left:auto;}
+
+.dimension-label-hint{
+  font-size:10px;
+  color:#7f56d9;
+  font-weight:700;
+}
+@media(max-width:900px){
+  .cad-contextbar{flex-wrap:wrap;}
+  .cad-primary-tools{width:100%;border-right:0;border-bottom:1px solid #eaecf0;padding:0 0 6px 0;margin:0;}
+}
+
+
+/* CAD Beta v10: restricciones permanentes */
+.cad-constraint-strip{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  flex-shrink:0;
+  padding-right:9px;
+  margin-right:2px;
+  border-right:1px solid #eaecf0;
+}
+.constraint-strip-label{
+  font-size:9px;
+  line-height:1;
+  text-transform:uppercase;
+  letter-spacing:.35px;
+  color:#98a2b3;
+  font-weight:850;
+  margin-right:2px;
+}
+.cad-constraint-action{
+  min-width:34px;
+  min-height:32px;
+  padding:4px 7px;
+  border:1px solid #d0d5dd;
+  border-radius:8px;
+  background:#fff;
+  color:#344054;
+  font-size:10px;
+  font-weight:850;
+  cursor:pointer;
+}
+.cad-constraint-action:not(:disabled):hover{
+  border-color:#7f56d9;
+  color:#6941c6;
+  background:#f9f5ff;
+}
+.cad-constraint-action:disabled{
+  opacity:.32;
+  cursor:not-allowed;
+  background:#f8fafc;
+}
+@media(max-width:1050px){
+  .constraint-strip-label{display:none;}
+  .cad-constraint-action{padding:4px 6px;min-width:31px;}
+}
+@media(max-width:900px){
+  .cad-constraint-strip{
+    width:100%;
+    border-right:0;
+    border-bottom:1px solid #eaecf0;
+    padding:0 0 6px 0;
+    margin:0;
+  }
+}
+
+
+/* CAD Beta v14: panel lateral compacto y estable */
+.cad-properties{
+  min-height:0;
+  height:100%;
+  box-sizing:border-box;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+}
+.cad-side-details{
+  border:1px solid #eaecf0;
+  border-radius:10px;
+  background:#fff;
+  margin-top:8px;
+  overflow:hidden;
+}
+.cad-side-details summary{
+  min-height:38px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:7px 10px;
+  cursor:pointer;
+  list-style:none;
+  color:#344054;
+  font-size:11px;
+  font-weight:850;
+  user-select:none;
+}
+.cad-side-details summary::-webkit-details-marker{display:none;}
+.cad-side-details summary::before{
+  content:"›";
+  color:#98a2b3;
+  font-size:15px;
+  line-height:1;
+  transform:rotate(0deg);
+  transition:transform .12s ease;
+}
+.cad-side-details[open] summary::before{transform:rotate(90deg);}
+.cad-side-details[open] summary{border-bottom:1px solid #eaecf0;}
+.side-summary-note{
+  margin-left:auto;
+  color:#98a2b3;
+  font-size:9px;
+  font-weight:650;
+  text-align:right;
+}
+.side-details-body{padding:9px 10px;}
+
+
+/* CAD Beta v16: barra contextual estable */
+.cad-contextbar{
+  height:50px;
+  min-height:50px;
+  max-height:50px;
+  box-sizing:border-box;
+  flex-wrap:nowrap !important;
+  overflow:hidden;
+  padding-top:6px;
+  padding-bottom:6px;
+}
+.cad-context-fields{
+  flex:1 1 320px;
+  min-width:180px;
+  height:36px;
+  max-height:36px;
+  flex-wrap:nowrap !important;
+  overflow:hidden;
+  white-space:nowrap;
+}
+.context-hint{
+  display:block;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.context-title,
+.context-badge,
+.context-action,
+.context-input{
+  flex:0 0 auto;
+  white-space:nowrap;
+}
+.context-input{
+  min-width:170px;
+  height:36px;
+  box-sizing:border-box;
+}
+.context-input input{
+  width:78px;
+  min-height:28px;
+}
+.cad-primary-tools,
+.cad-constraint-strip,
+.cad-view-buttons{
+  height:36px;
+  max-height:36px;
+  align-items:center;
+}
+
+/* Evita que reglas responsivas anteriores conviertan esta barra en dos filas. */
+@media(max-width:900px){
+  .cad-contextbar{
+    height:50px;
+    min-height:50px;
+    max-height:50px;
+    flex-wrap:nowrap !important;
+  }
+  .cad-primary-tools{
+    width:auto;
+    border-bottom:0;
+    padding-bottom:0;
+  }
+  .cad-constraint-strip{
+    width:auto;
+    border-bottom:0;
+    padding-bottom:0;
+  }
+}
+
+
+/* CAD Beta v17: opción de cota y colocación en dos pasos */
+.context-action.selected{
+  box-shadow:inset 0 0 0 2px rgba(255,255,255,.32);
+}
+
+
+/* CAD Beta v18: diagnóstico de conflicto por pares */
+.conflict-tree{
+  border:1px solid #fecdca;
+  background:#fff6f5;
+  border-radius:9px;
+  padding:8px;
+}
+.conflict-tree .relation-title{color:#b42318;}
+.relation-row.conflict .relation-select strong{color:#b42318;}
+
+
+/* CAD Beta v24: iconos y selección de ventana */
+.cad-tool-icon{
+  width:24px;
+  height:24px;
+  display:block;
+  fill:#fff;
+  stroke:#fff;
+  stroke-width:1;
+}
+.hand-icon{fill:#fff;stroke:#fff;}
+.relation-row.rule-selected{
+  outline:2px solid #2563eb;
+  outline-offset:1px;
+  background:#eff8ff;
+}
+.relation-row.rule-selected .relation-select{color:#175cd3;}
+
+
+/* CAD Beta v24: Seleccionar y Mano sólo oscuros al estar activos */
+.select-tool,
+.pan-tool{
+  background:#fff;
+  color:#344054;
+  border-color:#d0d5dd;
+}
+.select-tool:hover,
+.pan-tool:hover{
+  background:#f8fafc;
+  color:#101828;
+  border-color:#98a2b3;
+}
+.select-tool.active,
+.pan-tool.active{
+  background:#172033;
+  color:#fff;
+  border-color:#172033;
+}
+.select-tool .cad-tool-icon,
+.pan-tool .cad-tool-icon{
+  fill:#344054;
+  stroke:#344054;
+}
+.select-tool.active .cad-tool-icon,
+.pan-tool.active .cad-tool-icon{
+  fill:#fff;
+  stroke:#fff;
+}
+
+
+/* CAD Beta v25: nombre de proyecto */
+.cad-filename-control{
+  display:flex;align-items:center;gap:6px;min-height:40px;padding:4px 8px;
+  border:1px solid rgba(255,255,255,.35);border-radius:12px;
+  background:rgba(255,255,255,.10);color:#fff;box-sizing:border-box;
+}
+.cad-filename-control span{font-size:10px;font-weight:800;}
+.cad-filename-control input{
+  width:128px;min-width:90px;height:30px;padding:4px 8px;border:0;border-radius:8px;
+  background:#fff;color:#101828;font:inherit;font-size:11px;font-weight:700;outline:none;
+}
+.cad-filename-control input:focus{box-shadow:0 0 0 2px rgba(23,92,211,.25);}
+@media(max-width:1150px){
+  .cad-filename-control span{display:none;}
+  .cad-filename-control input{width:105px;}
+}
+
+
+/* CAD Beta v26: barra superior CAD compacta */
+.cad-action-compact{
+  min-width:auto;
+  height:42px;
+  padding:7px 11px;
+  gap:6px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  white-space:nowrap;
+}
+.cad-icon-btn{
+  width:42px;
+  min-width:42px;
+  height:42px;
+  padding:0;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+.cad-top-icon{
+  width:18px;
+  height:18px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.9;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  flex:none;
+}
+#cadUndo,#cadRedo{font-size:0;}
+#cadNew span,#cadOpen span{
+  font-size:12px;
+  font-weight:750;
+}
+
+/* Recuperar espacio adicional sin cambiar funciones */
+.cad-filename-control{
+  min-height:42px;
+  padding:4px 7px;
+}
+.cad-filename-control input{
+  width:112px;
+  height:30px;
+}
+#cadActions{
+  gap:8px;
+}
+#cadActions .download-control{
+  gap:6px;
+}
+#cadActions .download-format{
+  padding-left:8px;
+  padding-right:8px;
+}
+#cadActions .download-control .btn{
+  min-height:42px;
+}
+
+@media(max-width:1200px){
+  #cadNew span,#cadOpen span{display:none;}
+  .cad-action-compact{
+    width:42px;
+    min-width:42px;
+    padding:0;
+  }
+  .cad-filename-control input{width:96px;}
+}
