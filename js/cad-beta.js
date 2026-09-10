@@ -81,7 +81,7 @@ export function createCadEditor(opts={}){
     entities:[],dimensions:[],constraints:[],selected:[],
     tool:"select",draft:null,hover:null,snap:null,activeDimension:null,selectedRef:null,pickSelection:[],drag:null,hoverHandle:null,
     view:{scale:4,panX:0,panY:0},panning:false,panStart:null,
-    history:[],future:[],runtimeConflicts:new Set(),entityStates:new Map(),nextRuleOrder:1,rulesDirty:true,
+    history:[],future:[],runtimeConflicts:new Set(),entityStates:new Map(),nextRuleOrder:1,rulesDirty:true,rulesDirtyFrom:1,
     projectionPreferredAxes:new Set(),
     grid:{baseStep:0.1},
     defaultViewInitialized:false,
@@ -91,10 +91,26 @@ export function createCadEditor(opts={}){
     selectionBox:null,
     selectedRule:null,
   };
+  // Rendimiento: los snaps arrancan desactivados. El usuario puede habilitar
+  // sólo los que necesite desde el panel lateral.
+  for(const control of Object.values(opts.snapControls||{})){
+    if(control)control.checked=false;
+  }
+
   const toolButtons=()=>[...document.querySelectorAll(".cad-tool, .cad-primary-tool")];
   const snapEnabled=name=>!!opts.snapControls?.[name]?.checked;
+  const anySnapEnabled=()=>["endpoint","midpoint","center","intersection","grid"].some(snapEnabled);
 
-  function entity(id){ return state.entities.find(e=>e.id===id)||null; }
+  // Índice O(1) por id. Se reconstruye sólo si cambia el arreglo o su tamaño.
+  let entityIndexSource=null,entityIndexSize=-1,entityIndex=new Map();
+  function entity(id){
+    if(entityIndexSource!==state.entities||entityIndexSize!==state.entities.length){
+      entityIndexSource=state.entities;
+      entityIndexSize=state.entities.length;
+      entityIndex=new Map(state.entities.map(e=>[e.id,e]));
+    }
+    return entityIndex.get(id)||null;
+  }
   function snapshot(){
     return clone({
       format:"ibero-cad",version:9,units:"mm",precision:2,origin:state.origin,
@@ -105,7 +121,7 @@ export function createCadEditor(opts={}){
     const migrated=migrateDocument(doc);
     state.version=9;state.origin=migrated.origin||{x:0,y:0};
     state.entities=migrated.entities||[];state.dimensions=migrated.dimensions||[];state.constraints=migrated.constraints||[];
-    normalizeRuleMetadata();state.rulesDirty=true;
+    normalizeRuleMetadata();state.rulesDirty=true;state.rulesDirtyFrom=1;
     state.selected=[];state.selectedRef=null;state.pickSelection=[];state.draft=null;state.activeDimension=null;state.drag=null;
     state.selectionBox=null;state.selectedRule=null;
     solveAndRefresh();
@@ -113,11 +129,13 @@ export function createCadEditor(opts={}){
   function commit(){
     state.history.push(snapshot());if(state.history.length>100)state.history.shift();state.future=[];
   }
-  function mutate(fn,{solve=true}={}){
+  function mutate(fn,{solve=true,dirtyFrom=1}={}){
     commit();
     fn();
     if(solve){
-      markRulesDirty();
+      // Si fn() ya marcó una prioridad concreta, conservarla. Sólo usamos P1
+      // como fallback para mutaciones geométricas que no identifican una regla.
+      if(!state.rulesDirty)markRulesDirty(dirtyFrom);
       solveAndRefresh();
     }else refreshAll();
   }
@@ -191,6 +209,82 @@ export function createCadEditor(opts={}){
     if(ref.kind==="line")return`line:${ref.entity}`;
     return`${ref.kind}:${ref.entity||""}`;
   }
+  // El grafo de anclajes depende de las reglas activas y de si una línea es
+  // horizontal/vertical. Construirlo en cada consulta era uno de los puntos
+  // más costosos del solver.
+  let anchorGraphVersion=1;
+  const anchorGraphCache={x:null,y:null};
+
+  function lineAxisClass(e){
+    if(!e||e.type!=="line")return"";
+    const dx=e.x2-e.x1,dy=e.y2-e.y1;
+    return`${Math.abs(dx)<1e-7?"V":""}${Math.abs(dy)<1e-7?"H":""}`;
+  }
+  function invalidateAnchorGraph(){
+    anchorGraphVersion++;
+    anchorGraphCache.x=null;
+    anchorGraphCache.y=null;
+  }
+  function buildAxisAnchorGraph(axis){
+    const graph=new Map(),refs=new Map();
+    const addNode=r=>{
+      if(!r)return;
+      const k=refKey(r);
+      if(!graph.has(k))graph.set(k,[]);
+      if(!refs.has(k))refs.set(k,r);
+    };
+    const edge=(a,b,ruleId)=>{
+      if(!a||!b)return;
+      addNode(a);addNode(b);
+      graph.get(refKey(a)).push({key:refKey(b),ruleId});
+      graph.get(refKey(b)).push({key:refKey(a),ruleId});
+    };
+
+    addNode({kind:"origin"});
+
+    for(const c of state.constraints){
+      if(c.conflict||c.temporaryInactive)continue;
+      if(c.type==="coincident"&&c.mode!=="point-line"){
+        edge(c.a,c.b,c.id);
+      }else if(c.type==="coincident"&&c.mode==="point-line"){
+        const line=entity(c.line?.entity);
+        if(line?.type==="line"){
+          const cls=lineAxisClass(line);
+          const vertical=cls.includes("V"),horizontal=cls.includes("H");
+          if((axis==="x"&&vertical)||(axis==="y"&&horizontal)){
+            edge(c.point,makeEndpointRef(line.id,"start"),c.id);
+            edge(c.point,makeEndpointRef(line.id,"end"),c.id);
+          }
+        }
+      }else if(c.type==="horizontal"&&axis==="y"){
+        const e=entity(c.entities?.[0]);
+        if(e)edge(makeEndpointRef(e.id,"start"),makeEndpointRef(e.id,"end"),c.id);
+      }else if(c.type==="vertical"&&axis==="x"){
+        const e=entity(c.entities?.[0]);
+        if(e)edge(makeEndpointRef(e.id,"start"),makeEndpointRef(e.id,"end"),c.id);
+      }
+    }
+
+    for(const d of state.dimensions){
+      if(d.conflict||d.temporaryInactive||d.rejected||d.type!=="length")continue;
+      const e=entity(d.entity);if(!e||e.type!=="line")continue;
+      const cls=lineAxisClass(e);
+      const horizontal=cls.includes("H"),vertical=cls.includes("V");
+      if((axis==="x"&&horizontal)||(axis==="y"&&vertical)){
+        edge(makeEndpointRef(e.id,"start"),makeEndpointRef(e.id,"end"),d.id);
+      }
+    }
+
+    return{version:anchorGraphVersion,graph,refs};
+  }
+  function axisAnchorGraph(axis){
+    const cached=anchorGraphCache[axis];
+    if(cached&&cached.version===anchorGraphVersion)return cached;
+    const built=buildAxisAnchorGraph(axis);
+    anchorGraphCache[axis]=built;
+    return built;
+  }
+
   function preferredAxisKey(ref,axis){return`${refKey(ref)}|${axis}`;}
   function markPreferredAxis(ref,axis){
     if(ref&&axis)state.projectionPreferredAxes.add(preferredAxisKey(ref,axis));
@@ -211,63 +305,21 @@ export function createCadEditor(opts={}){
   function axisConstraintAnchorScore(ref,axis,excludeRuleId=null){
     if(!ref)return 0;
     const start=refKey(ref);
-    const graph=new Map(),refs=new Map();
-    const addNode=r=>{if(!r)return;const k=refKey(r);if(!graph.has(k))graph.set(k,new Set());refs.set(k,r);};
-    const edge=(a,b)=>{
-      if(!a||!b)return;
-      addNode(a);addNode(b);
-      graph.get(refKey(a)).add(refKey(b));graph.get(refKey(b)).add(refKey(a));
-    };
-
-    addNode(ref);
-    addNode({kind:"origin"});
-
-    for(const c of state.constraints){
-      if(c.id===excludeRuleId||c.conflict||c.temporaryInactive)continue;
-      if(c.type==="coincident"&&c.mode!=="point-line"){
-        edge(c.a,c.b);
-      }else if(c.type==="coincident"&&c.mode==="point-line"){
-        const line=entity(c.line?.entity);
-        if(line?.type==="line"){
-          const dx=line.x2-line.x1,dy=line.y2-line.y1;
-          const vertical=Math.abs(dx)<1e-7;
-          const horizontal=Math.abs(dy)<1e-7;
-          // Punto sobre vertical restringe X; punto sobre horizontal restringe Y.
-          // Conectarlo al eje normal permite que el solver reconozca el anclaje
-          // propagado de la línea objetivo (por ejemplo una línea ligada al origen).
-          if((axis==="x"&&vertical)||(axis==="y"&&horizontal)){
-            edge(c.point,makeEndpointRef(line.id,"start"));
-            edge(c.point,makeEndpointRef(line.id,"end"));
-          }
-        }
-      }else if(c.type==="horizontal"&&axis==="y"){
-        const e=entity(c.entities?.[0]);if(e)edge(makeEndpointRef(e.id,"start"),makeEndpointRef(e.id,"end"));
-      }else if(c.type==="vertical"&&axis==="x"){
-        const e=entity(c.entities?.[0]);if(e)edge(makeEndpointRef(e.id,"start"),makeEndpointRef(e.id,"end"));
-      }
-    }
-
-    // Las cotas de longitud anteriores también transmiten anclaje en el eje
-    // longitudinal de una línea H/V. Esto es esencial para que una cadena
-    // "origen -> lado -> longitud -> lado opuesto" se considere realmente fija.
-    for(const d of state.dimensions){
-      if(d.id===excludeRuleId||d.conflict||d.temporaryInactive||d.rejected)continue;
-      if(d.type!=="length")continue;
-      const e=entity(d.entity);if(!e||e.type!=="line")continue;
-      const dx=e.x2-e.x1,dy=e.y2-e.y1;
-      const horizontal=Math.abs(dy)<1e-7;
-      const vertical=Math.abs(dx)<1e-7;
-      if((axis==="x"&&horizontal)||(axis==="y"&&vertical)){
-        edge(makeEndpointRef(e.id,"start"),makeEndpointRef(e.id,"end"));
-      }
-    }
-
+    const {graph,refs}=axisAnchorGraph(axis);
     const queue=[[start,0]],seen=new Set([start]);
+
     while(queue.length){
-      const [k,depth]=queue.shift(),r=refs.get(k);
+      const [k,depth]=queue.shift();
+      // La referencia consultada puede no formar parte de ninguna arista.
+      const r=k===start?ref:refs.get(k);
       if(r&&directAxisAnchor(r,axis))return Math.max(1,100-depth);
-      for(const n of graph.get(k)||[]){
-        if(!seen.has(n)){seen.add(n);queue.push([n,depth+1]);}
+
+      for(const edge of graph.get(k)||[]){
+        if(edge.ruleId===excludeRuleId)continue;
+        if(!seen.has(edge.key)){
+          seen.add(edge.key);
+          queue.push([edge.key,depth+1]);
+        }
       }
     }
     return 0;
@@ -300,7 +352,7 @@ export function createCadEditor(opts={}){
   }
   function setRefPoint(ref,p,axis=null){
     const e=entity(ref?.entity);if(!e)return;
-    const set=(obj,k,v)=>{if(axis===null||axis===k)obj[v.key]=v.value;};
+    const beforeClass=e.type==="line"?lineAxisClass(e):null;
     if(ref.kind==="endpoint"&&e.type==="line"){
       const xk=ref.point==="start"?"x1":"x2",yk=ref.point==="start"?"y1":"y2";
       if(axis===null||axis==="x")e[xk]=p.x;if(axis===null||axis==="y")e[yk]=p.y;
@@ -309,6 +361,7 @@ export function createCadEditor(opts={}){
     }else if(ref.kind==="point"&&e.type==="point"){
       if(axis===null||axis==="x")e.x=p.x;if(axis===null||axis==="y")e.y=p.y;
     }
+    if(beforeClass!==null&&beforeClass!==lineAxisClass(e))invalidateAnchorGraph();
   }
   function lineRefs(e){return[makeEndpointRef(e.id,"start"),makeEndpointRef(e.id,"end")];}
   function connectedLineJoint(a,b){
@@ -401,9 +454,15 @@ export function createCadEditor(opts={}){
     rule.conflict=!!rule.rejected;
     return rule;
   }
-  function markRulesDirty(){state.rulesDirty=true;}
+  function markRulesDirty(order=1){
+    const n=Number(order);
+    const from=Number.isFinite(n)&&n>0?n:1;
+    if(!state.rulesDirty)state.rulesDirtyFrom=from;
+    else state.rulesDirtyFrom=Math.min(Number(state.rulesDirtyFrom)||from,from);
+    state.rulesDirty=true;
+  }
   function addDimensionObject(d){
-    d.id=d.id||uid("D");stampRule(d);state.dimensions.push(d);markRulesDirty();return d;
+    d.id=d.id||uid("D");stampRule(d);state.dimensions.push(d);markRulesDirty(d.order);return d;
   }
 
   function dimensionsForEntity(id){return state.dimensions.filter(d=>d.entity===id||(d.entities||[]).includes(id)||d.a?.entity===id||d.b?.entity===id||d.point?.entity===id||d.line?.entity===id||d.lineA===id||d.lineB===id);}
@@ -445,6 +504,7 @@ export function createCadEditor(opts={}){
   }
 
   function setLineLength(e,value,driverRuleId=null){
+    const beforeClass=lineAxisClass(e);
     const refs=lineRefs(e),angDeg=lineAngle(e);
     const horiz=Math.min(angleDelta(angDeg,0),angleDelta(angDeg,180))<1e-3;
     const vert=Math.min(angleDelta(angDeg,90),angleDelta(angDeg,270))<1e-3;
@@ -453,6 +513,7 @@ export function createCadEditor(opts={}){
     const L=Math.max(0,Number(value)||0),ang=rad(angDeg);
     if(move.point==="end"){e.x2=e.x1+L*Math.cos(ang);e.y2=e.y1+L*Math.sin(ang);}
     else{e.x1=e.x2-L*Math.cos(ang);e.y1=e.y2-L*Math.sin(ang);}
+    if(beforeClass!==lineAxisClass(e))invalidateAnchorGraph();
     const after=getRefPoint(move);
     if(before&&after){
       if(Math.abs(after.x-before.x)>EPS)markPreferredAxis(move,"x");
@@ -460,9 +521,11 @@ export function createCadEditor(opts={}){
     }
   }
   function setLineAngle(e,value){
+    const beforeClass=lineAxisClass(e);
     const refs=lineRefs(e),move=chooseMovableRef(refs[1],refs[0]),before=getRefPoint(move),L=lineLength(e),a=rad(Number(value)||0);
     if(move.point==="end"){e.x2=e.x1+L*Math.cos(a);e.y2=e.y1+L*Math.sin(a);}
     else{e.x1=e.x2-L*Math.cos(a);e.y1=e.y2-L*Math.sin(a);}
+    if(beforeClass!==lineAxisClass(e))invalidateAnchorGraph();
     const after=getRefPoint(move);
     if(before&&after){
       if(Math.abs(after.x-before.x)>EPS)markPreferredAxis(move,"x");
@@ -1005,26 +1068,59 @@ export function createCadEditor(opts={}){
       entry.rule.temporaryInactive=!active;
       entry.rule.conflict=!active;
     }
+    invalidateAnchorGraph();
   }
   function geometrySnapshot(){return clone(state.entities);}
-  function restoreGeometry(entities){state.entities=clone(entities);}
-  function validateRulesByPriority(){
+  function restoreGeometry(entities){state.entities=clone(entities);invalidateAnchorGraph();}
+  function validateRulesByPriority(fromOrder=1){
     normalizeRuleMetadata();
-    const ordered=allRulesOrdered(),accepted=[],acceptedIds=new Set();
+    const ordered=allRulesOrdered();
+    const requested=Math.max(1,Number(fromOrder)||1);
+
+    // Si ya había un conflicto/rechazo anterior, no congelarlo dentro del prefijo:
+    // volver desde el primer problema conocido.
+    const previousRuntimeConflicts=new Set(state.runtimeConflicts);
+    const earliestProblem=ordered.reduce((min,entry)=>{
+      if(!entry.rule.rejected&&!previousRuntimeConflicts.has(entry.rule.id))return min;
+      const n=Number(entry.rule.order);
+      return Number.isFinite(n)&&n>0?Math.min(min,n):min;
+    },Infinity);
+    const startOrder=Number.isFinite(earliestProblem)
+      ? Math.min(requested,earliestProblem)
+      : requested;
+
+    const accepted=[],acceptedIds=new Set(),pending=[];
     state.runtimeConflicts=new Set();
     clearConflictDiagnostics();
 
-    // rejected/conflict son RESULTADOS del solve, no estados permanentes.
-    // Cada resolución vuelve a probar todas las reglas desde P1 en adelante.
+    // P1..P(startOrder-1) ya fue validado en la resolución anterior.
+    // Se usa como base y se proyecta UNA vez, en lugar de volver a probar:
+    // P1, P1-P2, P1-P2-P3... de nuevo.
     for(const entry of ordered){
       const r=entry.rule;
-      r.rejected=false;
-      r.conflict=false;
-      r.temporaryInactive=false;
-      r.reason=undefined;
+      const order=Number(r.order)||Number.MAX_SAFE_INTEGER;
+      if(order<startOrder){
+        r.rejected=false;
+        r.conflict=false;
+        r.temporaryInactive=false;
+        r.reason=undefined;
+        accepted.push(entry);
+        acceptedIds.add(r.id);
+      }else{
+        r.rejected=false;
+        r.conflict=false;
+        r.temporaryInactive=false;
+        r.reason=undefined;
+        pending.push(entry);
+      }
     }
 
-    for(const entry of ordered){
+    setOnlyRulesActive(acceptedIds);
+    if(accepted.length)projectActiveRules(16);
+
+    // Sólo la regla modificada/nueva y las posteriores se vuelven a validar
+    // por orden de prioridad.
+    for(const entry of pending){
       const r=entry.rule;
       const before=geometrySnapshot();
       const trialIds=new Set(acceptedIds);trialIds.add(r.id);
@@ -1044,7 +1140,6 @@ export function createCadEditor(opts={}){
         r.rejected=true;r.conflict=true;
 
         if(violatedOlder.length){
-          // Registrar ambos extremos del conflicto sin desactivar la relación antigua.
           for(const oldEntry of violatedOlder)linkConflictPair(r,oldEntry.rule);
           const first=violatedOlder[0];
           r.reason=`Sobrerrestricción: P${r.order} se ignora para conservar P${first.rule.order} (${ruleDescription(first)}).`;
@@ -1060,14 +1155,17 @@ export function createCadEditor(opts={}){
     }
 
     setOnlyRulesActive(acceptedIds);
-    projectActiveRules(24);
+    projectActiveRules(pending.length?24:12);
+
     state.runtimeConflicts=new Set();
     for(const entry of accepted){
       const res=ruleResidual(entry);
       if(!Number.isFinite(res)||res>ruleTolerance(entry))state.runtimeConflicts.add(entry.rule.id);
     }
     for(const entry of ordered)if(entry.rule.rejected)entry.rule.conflict=true;
+
     state.rulesDirty=false;
+    state.rulesDirtyFrom=null;
   }
   function updateRuntimeResiduals(entries){
     state.runtimeConflicts=new Set();
@@ -1090,7 +1188,7 @@ export function createCadEditor(opts={}){
   function solve(){
     normalizeRuleMetadata();
     if(state.rulesDirty){
-      validateRulesByPriority();
+      validateRulesByPriority(state.rulesDirtyFrom||1);
     }else{
       solveFast(10,{states:true});
     }
@@ -1716,6 +1814,8 @@ export function createCadEditor(opts={}){
     return out;
   }
   function getSnap(p,{excludeEntity=null}={}){
+    // Con todos los snaps apagados no recorrer geometría ni calcular intersecciones.
+    if(!anySnapEnabled())return null;
     const tol=10/state.view.scale;let best=null,bd=Infinity;
     for(const c of snapCandidates(excludeEntity)){
       const d=dist(p,c);
@@ -1781,7 +1881,7 @@ export function createCadEditor(opts={}){
   }
 
   function addConstraintObject(c){
-    c.id=c.id||uid("K");c.source=c.source||"manual";stampRule(c);state.constraints.push(c);markRulesDirty();return c;
+    c.id=c.id||uid("K");c.source=c.source||"manual";stampRule(c);state.constraints.push(c);markRulesDirty(c.order);return c;
   }
   function addFixedRef(ref,source="manual"){
     const p=getRefPoint(ref);if(!p)return null;
@@ -2075,7 +2175,7 @@ export function createCadEditor(opts={}){
 
   function handleCreateClick(p,snap){
     if(state.tool==="point"){
-      mutate(()=>{const e={id:uid("P"),type:"point",x:round2(p.x),y:round2(p.y)};state.entities.push(e);autoAttachSnap(makePointRef(e.id),snap);});
+      mutate(()=>{const e={id:uid("P"),type:"point",x:round2(p.x),y:round2(p.y)};state.entities.push(e);autoAttachSnap(makePointRef(e.id),snap);},{dirtyFrom:state.nextRuleOrder});
       return;
     }
     if(state.tool==="line"){
@@ -2083,14 +2183,14 @@ export function createCadEditor(opts={}){
         state.draft={type:"line",x1:p.x,y1:p.y,x2:p.x,y2:p.y,startSnap:snap?clone(snap):null,inference:null};
       }else{
         const d=state.draft,end={x:p.x,y:p.y},endSnap=snap?clone(snap):null,inference=d.inference;
-        mutate(()=>addLineFromPoints({x:d.x1,y:d.y1},end,d.startSnap,endSnap,inference));
+        mutate(()=>addLineFromPoints({x:d.x1,y:d.y1},end,d.startSnap,endSnap,inference),{dirtyFrom:state.nextRuleOrder});
         state.draft=null;
       }updateContextBar();draw();return;
     }
     if(state.tool==="rect"){
       if(!state.draft)state.draft={type:"rect",x:p.x,y:p.y,w:0,h:0,startSnap:snap?clone(snap):null};
       else{
-        const d=state.draft;mutate(()=>createRectangle({x:d.x,y:d.y},p,d.startSnap,snap?clone(snap):null));state.draft=null;
+        const d=state.draft;mutate(()=>createRectangle({x:d.x,y:d.y},p,d.startSnap,snap?clone(snap):null),{dirtyFrom:state.nextRuleOrder});state.draft=null;
       }draw();return;
     }
     if(state.tool==="circle"){
@@ -2099,7 +2199,7 @@ export function createCadEditor(opts={}){
         const d=state.draft;mutate(()=>{
           const e={id:uid("C"),type:"circle",cx:round2(d.cx),cy:round2(d.cy),r:round2(dist({x:d.cx,y:d.cy},p))};state.entities.push(e);
           autoAttachSnap(makeCenterRef(e.id),d.centerSnap);
-        });state.draft=null;
+        },{dirtyFrom:state.nextRuleOrder});state.draft=null;
       }draw();
     }
   }
@@ -2155,7 +2255,7 @@ export function createCadEditor(opts={}){
   function editDimension(id,value){
     const d=state.dimensions.find(x=>x.id===id);if(!d)return;
     const parsed=Number(value);if(!Number.isFinite(parsed))return;
-    mutate(()=>{d.value=round2(parsed);markRulesDirty();});
+    mutate(()=>{d.value=round2(parsed);markRulesDirty(d.order);});
     state.activeDimension=id;
     state.selected=[];state.selectedRef=null;state.pickSelection=[];
     if(d.rejected)setStatus(`P${d.order}: el nuevo valor entra en conflicto después de recalcular P1…P${d.order}.`);
@@ -2296,7 +2396,7 @@ export function createCadEditor(opts={}){
       else state.dimensions=state.dimensions.filter(x=>x.id!==id);
       if(state.activeDimension===id)state.activeDimension=null;
       if(state.selectedRule?.id===id)state.selectedRule=null;
-      markRulesDirty();
+      markRulesDirty(removed?.order||1);
     });
     if(removed)setStatus(`P${removed.order||"?"} eliminada · se recalcularon todas las cotas y restricciones restantes.`);
     updateContextBar();
@@ -3194,7 +3294,8 @@ export function createCadEditor(opts={}){
         x:(Number(d.originalOffset.x)||0)+(screen.x-d.screenStart.x)/state.view.scale,
         y:(Number(d.originalOffset.y)||0)-(screen.y-d.screenStart.y)/state.view.scale
       };
-      refreshAll();return true;
+      // Sólo cambia la posición visual del texto: no reconstruir paneles DOM.
+      draw();return true;
     }
     if(!d.committed){commit();d.committed=true;d.moved=true;if(d.type==="ref")prepareCoincidentMasterForRef(d.ref);else prepareLineDragMasters(entity(d.entity));}
     const raw=screenToWorld(screen.x,screen.y);

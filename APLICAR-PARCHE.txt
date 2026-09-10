@@ -1,5 +1,0 @@
-PARCHE ACUMULATIVO GitHub main -> CAD Beta v24
-Base: HuberGiron/dxf-viewer main @ e761dce9ec906d6cd0f3f8fa69fa9bd2743a4bef
-
-Extrae este ZIP en la raíz de un clon limpio del repositorio.
-Incluye todos los cambios acumulados hasta v24.
